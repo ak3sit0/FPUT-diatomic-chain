@@ -1,0 +1,33 @@
+#!/bin/bash
+#PBS -N alpha_sweep_N_scale_sweep_g1
+#PBS -q workq
+#PBS -l nodes=1:ppn=8
+#PBS -l mem=64gb
+#PBS -l walltime=48:00:00
+#PBS -o results/logs/${PBS_JOBID}_alpha_sweep_N_scale_sweep_g1.log
+#PBS -j oe
+
+set -euo pipefail
+cd "$PBS_O_WORKDIR"
+
+export JULIA_NUM_THREADS=8
+JULIA_BIN="${JULIA_BIN:-$HOME/.juliaup/bin/julia}"
+
+for N in 32 64 128; do
+  CONFIG="configs/alpha_sweep_N${N}_periodic.toml"
+  echo "=============================================="
+  echo "Ejecutando N=${N} con $CONFIG"
+  echo "=============================================="
+  if [[ ! -f "$CONFIG" ]]; then
+    echo "ERROR: falta config $CONFIG"
+    exit 1
+  fi
+
+  "$JULIA_BIN" --project=. --threads=${JULIA_NUM_THREADS} \
+    examples/compute_modal_energies.jl "$CONFIG"
+
+  echo "Fin N=${N} - $(date)"
+  echo
+done
+
+exit 0

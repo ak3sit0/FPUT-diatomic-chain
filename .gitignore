@@ -1,0 +1,32 @@
+# Julia
+*.jl.swp
+*.jl.swo
+*~
+.julia/
+Manifest.lock
+
+# Results (large data)
+results/raw/**/
+results/logs/
+*.jld2
+*.h5
+
+# Figures (keep structure, ignore large files)
+results/figures/**/
+*.png
+*.pdf
+*.svg
+
+# OS
+.DS_Store
+.~*
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.sublime-workspace
+
+# Temporary
+*.tmp
+.cache/

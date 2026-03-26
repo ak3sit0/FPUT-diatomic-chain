@@ -1,0 +1,24 @@
+[experiment]
+name        = "beta_extreme_deltas_periodic"
+description = "β sweep with extreme Δ values under periodic boundary conditions"
+
+[physics]
+N                  = 32
+boundary           = "periodic"
+system_type        = "springs"
+nonlinear          = "beta"
+param_values       = [0.1]
+delta_values       = [0.6, 0.8, 0.85, 0.9]
+initial_condition  = "low"
+initial_energy     = 0.45
+
+[simulation]
+TMAX       = 1e8
+T_block    = 1e6
+DT         = 0.05
+save_every = 1000
+downsample = 2
+debug      = true
+
+[output]
+base_dir = "results/raw"

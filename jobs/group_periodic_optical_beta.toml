@@ -1,0 +1,10 @@
+# Job group: Periodic BC, Optical mode, beta only
+# (alpha already done in alpha_optical_N64_periodic.toml)
+# Launch with: julia batch_jobs.jl jobs/group_periodic_optical_beta.toml
+
+[job]
+name        = "periodic_optical_beta"
+description = "Periodic boundary conditions, optical mode, β-nonlinearity"
+
+[[simulations]]
+config = "configs/periodic_optical_beta.toml"

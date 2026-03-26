@@ -1,0 +1,18 @@
+# Job group: Fixed BC - all 4 combinations (acoustic/optical × alpha/beta)
+# Launch with: julia batch_jobs.jl jobs/group_fixed_bc.toml
+
+[job]
+name        = "fixed_bc"
+description = "Fixed boundary conditions: 2×2 matrix (acoustic/optical × α/β)"
+
+[[simulations]]
+config = "configs/fixed_acoustic_alpha.toml"
+
+[[simulations]]
+config = "configs/fixed_acoustic_beta.toml"
+
+[[simulations]]
+config = "configs/fixed_optical_alpha.toml"
+
+[[simulations]]
+config = "configs/fixed_optical_beta.toml"

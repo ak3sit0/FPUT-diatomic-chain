@@ -1,0 +1,25 @@
+[experiment]
+name        = "fixed_acoustic_alpha_short"
+description = "Fixed BC, acoustic mode; short run to inspect initial excitation"
+
+[physics]
+N                 = 64
+boundary          = "fixed"
+system_type       = "springs"
+nonlinear         = "alpha"
+param_values      = [0.1]
+delta_values      = [0.01]
+initial_condition = "low"
+init_mode         = 1          # lowest acoustic mode
+initial_energy    = 0.45
+
+[simulation]
+TMAX       = 1e2
+T_block    = 1e2
+DT         = 0.05
+save_every = 1
+downsample = 1
+debug      = false
+
+[output]
+base_dir = "results/raw"

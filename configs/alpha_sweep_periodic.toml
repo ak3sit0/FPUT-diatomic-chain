@@ -1,0 +1,24 @@
+[experiment]
+name        = "alpha_sweep_periodic"
+description = "α sweep under periodic boundary conditions — paper Fig. 3 (entropy / ξ)"
+
+[physics]
+N                  = 32
+boundary           = "periodic"
+system_type        = "springs"
+nonlinear          = "alpha"
+param_values       = [0.1]
+delta_values       = [0.1, 0.333, 0.4, 0.5, 0.6]
+initial_condition  = "low"
+initial_energy     = 0.45
+
+[simulation]
+TMAX       = 1e8
+T_block    = 1e6
+DT         = 0.05
+save_every = 1000
+downsample = 2
+debug      = true
+
+[output]
+base_dir = "results/raw"

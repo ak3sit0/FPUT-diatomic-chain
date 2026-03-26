@@ -1,0 +1,44 @@
+STARTING: 4 sims | TMAX=1.0e7 | Block=1.0e6
+[2] ↻ Resuming 3 (p=0.1, d=0.2)
+[5] ✓ i=2 t=1.0e6 | Mem: 0.2MB | E_mean: 0.154
+[3] ✓ i=1 t=1.0e6 | Mem: 0.2MB | E_mean: 0.144
+[4] ✓ i=4 t=1.0e6 | Mem: 0.2MB | E_mean: 0.179
+[2] ✓ i=3 t=4.0e6 | Mem: 0.2MB | E_mean: 0.166
+[2] ✓ i=3 t=5.0e6 | Mem: 0.2MB | E_mean: 0.166
+[4] ✓ i=4 t=2.0e6 | Mem: 0.2MB | E_mean: 0.179
+[5] ✓ i=2 t=2.0e6 | Mem: 0.2MB | E_mean: 0.154
+[3] ✓ i=1 t=2.0e6 | Mem: 0.2MB | E_mean: 0.144
+[4] ✓ i=4 t=3.0e6 | Mem: 0.2MB | E_mean: 0.179
+[5] ✓ i=2 t=3.0e6 | Mem: 0.2MB | E_mean: 0.154
+[3] ✓ i=1 t=3.0e6 | Mem: 0.2MB | E_mean: 0.144
+[2] ✓ i=3 t=6.0e6 | Mem: 0.2MB | E_mean: 0.166
+[4] ✓ i=4 t=4.0e6 | Mem: 0.2MB | E_mean: 0.179
+[2] ✓ i=3 t=7.0e6 | Mem: 0.2MB | E_mean: 0.166
+[3] ✓ i=1 t=4.0e6 | Mem: 0.2MB | E_mean: 0.144
+[5] ✓ i=2 t=4.0e6 | Mem: 0.2MB | E_mean: 0.154
+[4] ✓ i=4 t=5.0e6 | Mem: 0.2MB | E_mean: 0.179
+[2] ✓ i=3 t=8.0e6 | Mem: 0.2MB | E_mean: 0.166
+[3] ✓ i=1 t=5.0e6 | Mem: 0.2MB | E_mean: 0.144
+[5] ✓ i=2 t=5.0e6 | Mem: 0.2MB | E_mean: 0.154
+[4] ✓ i=4 t=6.0e6 | Mem: 0.2MB | E_mean: 0.179
+[3] ✓ i=1 t=6.0e6 | Mem: 0.2MB | E_mean: 0.144
+[5] ✓ i=2 t=6.0e6 | Mem: 0.2MB | E_mean: 0.154
+[2] ✓ i=3 t=9.0e6 | Mem: 0.2MB | E_mean: 0.166
+[4] ✓ i=4 t=7.0e6 | Mem: 0.2MB | E_mean: 0.179
+[3] ✓ i=1 t=7.0e6 | Mem: 0.2MB | E_mean: 0.144
+[5] ✓ i=2 t=7.0e6 | Mem: 0.2MB | E_mean: 0.154
+[2] ✓ i=3 t=1.0e7 | Mem: 0.2MB | E_mean: 0.166
+[2]  DONE: p=0.1, d=0.2
+[4] ✓ i=4 t=8.0e6 | Mem: 0.2MB | E_mean: 0.179
+[3] ✓ i=1 t=8.0e6 | Mem: 0.2MB | E_mean: 0.144
+[5] ✓ i=2 t=8.0e6 | Mem: 0.2MB | E_mean: 0.154
+[4] ✓ i=4 t=9.0e6 | Mem: 0.2MB | E_mean: 0.179
+[3] ✓ i=1 t=9.0e6 | Mem: 0.2MB | E_mean: 0.144
+[5] ✓ i=2 t=9.0e6 | Mem: 0.2MB | E_mean: 0.154
+[4] ✓ i=4 t=1.0e7 | Mem: 0.2MB | E_mean: 0.179
+[4]  DONE: p=0.1, d=0.3
+[3] ✓ i=1 t=1.0e7 | Mem: 0.2MB | E_mean: 0.144
+[3]  DONE: p=0.1, d=0.01
+[5] ✓ i=2 t=1.0e7 | Mem: 0.2MB | E_mean: 0.154
+[5]  DONE: p=0.1, d=0.1
+COMPLETED. Saved 4/4 to results/data/modal_energies/modal_energies_springs_alpha_periodic_2026-02-08.jld2

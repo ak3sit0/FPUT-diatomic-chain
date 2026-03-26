@@ -1,0 +1,12 @@
+# Job group: Periodic BC, Acoustic modes
+# Launch with: julia batch_jobs.jl jobs/group_periodic_acoustic.toml
+
+[job]
+name        = "periodic_acoustic"
+description = "Periodic boundary conditions, acoustic modes: α vs β"
+
+[[simulations]]
+config = "configs/periodic_acoustic_alpha.toml"
+
+[[simulations]]
+config = "configs/periodic_acoustic_beta.toml"

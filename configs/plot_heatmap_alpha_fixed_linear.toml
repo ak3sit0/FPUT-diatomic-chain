@@ -1,0 +1,15 @@
+# Plot config for plot_heatmap_grid.jl (fixed, linear color scale)
+# Usage: julia --project=. examples/plot_heatmap_grid.jl configs/plot_heatmap_alpha_fixed_linear.toml
+
+[data]
+input_file = "results/data/modal_energies/springs_alpha_fixed_delta_k_00103/modal_energies_springs_alpha_fixed_2026-02-03.jld2"
+
+[plot]
+t_min          = 1.0
+t_max          = 1.0e18   # use a very large number to mean "no upper limit"
+time_subsample = 1       # keep every n-th time step (1 = all)
+max_delta_cols = 3       # limit number of columns; use a large number for all
+color_scale    = "linear"   # "log" or "linear"
+
+[output]
+heatmaps_dir = "results/figures/heatmaps"

@@ -1,0 +1,25 @@
+[experiment]
+name        = "fixed_optical_beta"
+description = "Fixed BC, optical mode (mode N/2+1=33), β-nonlinearity"
+
+[physics]
+N                 = 64
+boundary          = "fixed"
+system_type       = "springs"
+nonlinear         = "beta"
+param_values      = [0.1]
+delta_values      = [0.0, 0.01, 0.1, 0.12, 0.15, 0.17, 0.2, 0.3, 0.6, 0.8, 0.9]
+initial_condition = "high"
+init_mode         = 33
+initial_energy    = 0.45
+
+[simulation]
+TMAX       = 1e8
+T_block    = 1e6
+DT         = 0.05
+save_every = 1000
+downsample = 2
+debug      = false
+
+[output]
+base_dir = "results/raw"

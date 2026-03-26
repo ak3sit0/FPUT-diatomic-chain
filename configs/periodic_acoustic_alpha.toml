@@ -1,0 +1,25 @@
+[experiment]
+name        = "periodic_acoustic_alpha"
+description = "Periodic BC, acoustic mode (mode 2), α-nonlinearity"
+
+[physics]
+N                 = 64
+boundary          = "periodic"
+system_type       = "springs"
+nonlinear         = "alpha"
+param_values      = [0.1]
+delta_values      = [0.0, 0.01, 0.1, 0.12, 0.15, 0.17, 0.2, 0.3, 0.6, 0.8, 0.9]
+initial_condition = "low"
+init_mode         = 2         # lowest acoustic mode (periodic)
+initial_energy    = 0.45
+
+[simulation]
+TMAX       = 1e8
+T_block    = 1e6
+DT         = 0.05
+save_every = 1000
+downsample = 2
+debug      = false
+
+[output]
+base_dir = "results/raw"
