@@ -8,6 +8,7 @@ Manifest.lock
 # Results (large data)
 results/raw/**/
 results/logs/
+results/data/**/
 *.jld2
 *.h5
 
