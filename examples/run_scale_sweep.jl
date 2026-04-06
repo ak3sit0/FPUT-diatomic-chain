@@ -2,7 +2,7 @@
 using TOML, Dates, JLD2
 
 # Configuración básica
-TMAX = 1e6
+TMAX = 1e7
 NS = [32, 64, 128, 256]
 BASE_CONFIG = "configs/alpha_sweep_N_periodic.toml"
 OUTPUT_DIR = "results/raw/alpha_sweep_N_periodic"

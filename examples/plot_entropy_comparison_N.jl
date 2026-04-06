@@ -10,7 +10,7 @@ using Main.EnergyAnalysis
 # CONFIGURACIÓN 
 # ============================================================================
 DATA_DIR = "results/raw/alpha_sweep_N_periodic"
-OUTPUT_DIR = "results/figures/entropy"
+OUTPUT_DIR = "results/figures/entropy/alpha_sweep_N_periodic"
 DELTA_SMOOTH = 0.6
 NS = [32, 64, 128, 256]
 
@@ -65,9 +65,17 @@ end
 # ============================================================================
 println("\n📊 Calculando entropías...")
 
-p = plot(xlabel=L"t \, (\mathrm{ciclos})", ylabel=L"S \, (k_B)", 
-         title=L"\alpha\text{-FPUT periodic BC, } \delta\kappa=0.1",
-         legend=:bottomright, size=(900, 600), margin=5Plots.mm)
+p = plot(legend=:topright,
+         guidefont=font(16),
+         tickfont=font(14),
+         legendfont=font(12),
+         framestyle=:box,
+         grid=false,
+         xscale=:log10,
+         xlabel=L"t",
+         ylabel=L"\bar{S}(t)",
+         size=(900, 600),
+         margin=5Plots.mm)
 
 colors = [:red, :blue, :green, :orange]
 
@@ -75,8 +83,15 @@ for (idx, N) in enumerate(sort(collect(keys(results_by_N))))
     modal_E, scaled_t = results_by_N[N]
     entropy = compute_entropy(modal_E, DELTA_SMOOTH)
     
+    # Evitar t=0 en escala logarítmica
+    mask = scaled_t .> 0
+    if sum(mask) == 0
+        println("  ⚠️ N=$N: no hay puntos positivos en t para escala log")
+        continue
+    end
+
     # Plotear
-    plot!(p, scaled_t, entropy; label=L"N = $N", linewidth=2.5, 
+    plot!(p, scaled_t[mask], entropy[mask]; label="N = $N", linewidth=2.5, 
           color=colors[idx], alpha=0.8)
     
     println("  ✓ N=$N: S(0)=$(round(entropy[1]; digits=3)), " *
