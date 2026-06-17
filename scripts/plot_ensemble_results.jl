@@ -1,17 +1,19 @@
 """
     plot_ensemble_results.jl
 
-Visualización de resultados del ensamble de fases:
+Visualización de resultados del ensamble de fases (estilo CairoMakie):
   - Heatmap de energía modal vs tiempo para Δκ ∈ {0.1, 0.3, 0.5}
-  - Entropía S̄(t) y dispersión σ(S) vs Δκ
-  - Energía óptica relativa E_opt/E_total vs Δκ
+  - Entropía S̄(t) y dispersión σ(S) vs tiempo para cada Δκ
+  - Resumen global: S̄(∞) y E_opt/E_total vs Δκ
 
 Usage:
   julia --project=. scripts/plot_ensemble_results.jl results/data/ensemble_production/ensemble_results_YYYY-MM-DD.jld2
 """
 
-using JLD2, Plots, Statistics, LaTeXStrings
-gr()
+using JLD2, CairoMakie, Statistics, LaTeXStrings, Colors
+
+# Gradiente custom de blues (rescatado de plot_heatmap_grid.jl)
+const BLUES_GRADIENT = cgrad([:white, "#B2D9FF", "#5999F2", "#3359CC", "#0D4CB3"])
 
 function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/ensemble")
     mkpath(outdir)
@@ -57,9 +59,9 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
     S_final_stds = S_final_stds[idx_sort]
     E_opt_finals = E_opt_finals[idx_sort]
 
-    # --- Figura 1: Heatmaps de energía modal ---
-    fig1 = @layout [grid(1,3)]
-    p1 = plot(layout=fig1, size=(1500, 400))
+    # --- Figura 1: Heatmaps de energía modal (CairoMakie) ---
+    fig1 = Figure(size=(1500, 450))
+    ga1 = fig1[1, 1] = GridLayout()
 
     for (i, δ) in enumerate(delta_targets)
         if haskey(cases_by_delta, δ)
@@ -81,19 +83,27 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
                 E_max = maximum(modal_E)
                 E_norm = (modal_E .- E_min) ./ (E_max - E_min + 1e-12)
 
-                hm = heatmap!(p1[i], t, 1:size(E_norm,1), E_norm,
-                             title="Δκ = $δ", xlabel="Tiempo (ciclos)", ylabel="Modo",
-                             clim=(0, 1), colorbar=true, cpalette=:blues)
+                ax = Axis(ga1[1, i];
+                    title=latexstring("\\Delta\\kappa = $δ"),
+                    xlabel="Tiempo (ciclos)", ylabel="Modo",
+                    titlesize=16, xlabelsize=12, ylabelsize=12)
+
+                hm = heatmap!(ax, t, 1:size(E_norm,1), E_norm';
+                    colormap=BLUES_GRADIENT, colorrange=(0, 1))
+
+                if i == length(delta_targets)
+                    Colorbar(fig1[1, i+1], hm; label="Energía normalizada")
+                end
             end
         end
     end
 
-    savefig(p1, joinpath(outdir, "01_modal_energy_heatmaps.pdf"))
-    println("Guardado: $(outdir)/01_modal_energy_heatmaps.pdf")
+    save(joinpath(outdir, "01_modal_energy_heatmaps.png"), fig1; px_per_unit=2)
+    println("Guardado: $(outdir)/01_modal_energy_heatmaps.png")
 
     # --- Figura 2: Entropía vs tiempo para cada Δκ representativo ---
-    fig2 = @layout [grid(1,3)]
-    p2 = plot(layout=fig2, size=(1500, 400))
+    fig2 = Figure(size=(1500, 450))
+    ga2 = fig2[1, 1] = GridLayout()
 
     for (i, δ) in enumerate(delta_targets)
         if haskey(cases_by_delta, δ)
@@ -103,34 +113,50 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
             S_std = result.entropy_std
 
             if length(t) > 0 && length(S_mean) > 0
-                plot!(p2[i], t, S_mean, ribbon=S_std, label="S̄(t) ± σ",
-                     title="Δκ = $δ", xlabel="Tiempo (ciclos)", ylabel="Entropía",
-                     legend=:bottomright, linewidth=2, fillalpha=0.3)
+                ax = Axis(ga2[1, i];
+                    title=latexstring("\\Delta\\kappa = $δ"),
+                    xlabel="Tiempo (ciclos)", ylabel="Entropía espectral",
+                    titlesize=16, xlabelsize=12, ylabelsize=12)
+
+                band!(ax, t, S_mean .- S_std, S_mean .+ S_std, alpha=0.3, color="#5999F2")
+                lines!(ax, t, S_mean, color="#0D4CB3", linewidth=2)
             end
         end
     end
 
-    savefig(p2, joinpath(outdir, "02_entropy_vs_time.pdf"))
-    println("Guardado: $(outdir)/02_entropy_vs_time.pdf")
+    save(joinpath(outdir, "02_entropy_vs_time.png"), fig2; px_per_unit=2)
+    println("Guardado: $(outdir)/02_entropy_vs_time.png")
 
-    # --- Figura 3: Resumen global ---
-    fig3 = @layout [grid(2,1)]
-    p3 = plot(layout=fig3, size=(1000, 800))
+    # --- Figura 3: Resumen global (2 paneles) ---
+    fig3 = Figure(size=(1000, 800))
+    ga3 = fig3[1, 1] = GridLayout()
 
     # Panel 3a: Entropía final vs Δκ
-    plot!(p3[1], all_deltas, S_final_means, ribbon=S_final_stds,
-         title="Entropía final vs Δκ", xlabel="Δκ", ylabel="S̄(∞)",
-         legend=:bottomright, linewidth=2, marker=:circle, markersize=6, fillalpha=0.3,
-         ylim=(3.5, 4.2))
+    ax_s = Axis(ga3[1, 1];
+        title="Entropía final vs Δκ",
+        xlabel=latexstring("\\Delta\\kappa"), ylabel=latexstring("\\bar{S}(\\infty)"),
+        titlesize=14, xlabelsize=12, ylabelsize=12)
+
+    band!(ax_s, all_deltas, S_final_means .- S_final_stds, S_final_means .+ S_final_stds,
+        alpha=0.3, color="#5999F2")
+    scatter!(ax_s, all_deltas, S_final_means, color="#0D4CB3", markersize=8)
+    lines!(ax_s, all_deltas, S_final_means, color="#0D4CB3", linewidth=2)
+    ylims!(ax_s, 3.5, 4.2)
 
     # Panel 3b: Energía óptica relativa vs Δκ
-    plot!(p3[2], all_deltas, E_opt_finals,
-         title="Fracción de energía óptica vs Δκ", xlabel="Δκ", ylabel="E_opt / E_total",
-         legend=false, linewidth=2, marker=:circle, markersize=6,
-         ylim=(0.2, 0.55), hline=[0.5], line=(:dash, :gray))
+    ax_e = Axis(ga3[2, 1];
+        title="Fracción de energía óptica vs Δκ",
+        xlabel=latexstring("\\Delta\\kappa"), ylabel=latexstring("E_{\\mathrm{opt}} / E_{\\mathrm{tot}}"),
+        titlesize=14, xlabelsize=12, ylabelsize=12)
 
-    savefig(p3, joinpath(outdir, "03_global_summary.pdf"))
-    println("Guardado: $(outdir)/03_global_summary.pdf")
+    scatter!(ax_e, all_deltas, E_opt_finals, color="#0D4CB3", markersize=8)
+    lines!(ax_e, all_deltas, E_opt_finals, color="#0D4CB3", linewidth=2)
+    hlines!(ax_e, [0.5], color=:gray, linestyle=:dash, linewidth=1)
+    ylims!(ax_e, 0.2, 0.55)
+
+    rowgap!(ga3, 15)
+    save(joinpath(outdir, "03_global_summary.png"), fig3; px_per_unit=2)
+    println("Guardado: $(outdir)/03_global_summary.png")
 
     println("\n=== Resumen de resultados ===")
     println("Δκ\tS̄(∞)\t\tE_opt/E_tot")
