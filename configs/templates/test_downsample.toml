@@ -1,0 +1,23 @@
+[experiment]
+name = "downsample_test"
+description = "Test if downsample=10 reduces saved points"
+
+[physics]
+N = 16
+boundary = "periodic"
+system_type = "springs"
+nonlinear = "alpha"
+param_values = [0.1]
+delta_values = [0.01]
+initial_energy = 0.45
+
+[simulation]
+TMAX = 100.0
+T_block = 50.0
+DT = 0.05
+save_every = 1
+downsample = 10 
+debug = false
+
+[output]
+base_dir = "results/data"

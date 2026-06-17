@@ -1,0 +1,27 @@
+[experiment]
+name = "sweep_N_acoustic"
+description = "Barrido sobre N (acoustic mode)"
+
+[physics]
+# If N_values absent, scripts fall back to N
+N_values = [16, 32, 64]
+boundary = "periodic"
+system_type = "springs"
+nonlinear = "alpha"
+param_values = [0.1]
+delta_values = [0.01]
+initial_condition = "mode"
+init_mode = 2
+initial_energy = 0.45
+
+[simulation]
+TMAX = 100.0
+T_block = 50.0
+DT = 0.05
+save_every = 1
+downsample = 1
+debug = false
+entropy_delta = 0.6
+
+[output]
+base_dir = "results/data"

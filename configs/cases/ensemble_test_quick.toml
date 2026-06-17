@@ -1,0 +1,28 @@
+[experiment]
+name        = "ensemble_test_quick"
+description = "Test rápido del ensamble — TMAX corto para verificación"
+
+[physics]
+N             = 64
+boundary      = "periodic"
+system_type   = "springs"
+nonlinear     = "alpha"
+param_values  = [0.1]
+delta_values  = [0.1, 0.3]
+energy_density = 0.445        # energía por partícula (E_total = N * energy_density)
+init_type     = "band_ensemble"
+branch        = "acoustic"
+n_real        = 3
+seed_base     = 42
+
+[simulation]
+TMAX          = 1e3
+T_block       = 5e2
+DT            = 0.05
+save_every    = 10
+downsample    = 1
+entropy_delta = 0.6
+debug         = true
+
+[output]
+base_dir = "results/data/test_ensemble"

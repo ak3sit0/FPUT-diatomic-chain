@@ -1,0 +1,26 @@
+[experiment]
+name = "periodic_N64_production"
+description = "Periodic BC, N=64, α-spring nonlinearity, production run"
+
+[physics]
+N = 64
+boundary = "periodic"
+system_type = "springs"
+nonlinear = "alpha"
+param_values = [0.1]
+delta_values = [0.01, 0.1, 0.2]
+initial_condition = "mode"
+init_mode = 2
+initial_energy = 0.45
+
+[simulation]
+TMAX = 1e7
+T_block = 1e5
+DT = 0.05
+save_every = 200000 # keeps ~1000 saved points: TMAX/(DT*save_every) ≈ 1000
+downsample = 1
+debug = false
+
+[output]
+base_dir = "results/data"
+

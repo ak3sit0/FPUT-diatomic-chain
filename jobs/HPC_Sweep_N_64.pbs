@@ -1,0 +1,9 @@
+#!/bin/bash
+#PBS -N FPUT_HPC_Sweep_N_64
+#PBS -l nodes=1:ppn=8
+#PBS -l walltime=24:00:00
+#PBS -o results/raw/log_HPC_Sweep_N_64.out
+#PBS -j oe
+
+cd $PBS_O_WORKDIR
+julia --project=. examples/fput_literate_sim.jl jobs/HPC_Sweep_N_64.toml

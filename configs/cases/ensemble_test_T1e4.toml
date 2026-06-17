@@ -1,0 +1,28 @@
+[experiment]
+name        = "ensemble_test_T1e4"
+description = "Test con TMAX=1e4 para ver ordenamiento de entropía entre Δκ"
+
+[physics]
+N              = 64
+boundary       = "periodic"
+system_type    = "springs"
+nonlinear      = "alpha"
+param_values   = [0.1]
+delta_values   = [0.1, 0.3, 0.6, 0.9]
+energy_density = 0.445
+init_type      = "band_ensemble"
+branch         = "acoustic"
+n_real         = 3
+seed_base      = 42
+
+[simulation]
+TMAX          = 1e4
+T_block       = 5e3
+DT            = 0.05
+save_every    = 100
+downsample    = 1
+entropy_delta = 0.6
+debug         = true
+
+[output]
+base_dir = "results/data/test_ensemble"

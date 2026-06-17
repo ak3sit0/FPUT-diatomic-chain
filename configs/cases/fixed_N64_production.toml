@@ -1,0 +1,25 @@
+[experiment]
+name = "fixed_N64_production"
+description = "Fixed BC, N=64, α-spring nonlinearity, production run"
+
+[physics]
+N = 64
+boundary = "fixed"
+system_type = "springs"
+nonlinear = "alpha"
+param_values = [0.1]
+delta_values = [0.01, 0.1, 0.2]
+initial_condition = "mode"
+init_mode = 1
+initial_energy = 0.45
+
+[simulation]
+TMAX = 1e7
+T_block = 1e5
+DT = 0.05
+save_every = 200000
+downsample = 1
+debug = false
+
+[output]
+base_dir = "results/data"

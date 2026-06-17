@@ -1,0 +1,26 @@
+[experiment]
+name = "sweep_N_acoustic_long"
+description = "Barrido sobre N (acoustic mode) - extended test"
+
+[physics]
+N_values = [16, 32, 64, 128]
+boundary = "periodic"
+system_type = "springs"
+nonlinear = "alpha"
+param_values = [0.1]
+delta_values = [0.1]
+initial_condition = "mode"
+init_mode = 2
+initial_energy = 0.45
+
+[simulation]
+TMAX = 1.0e7
+T_block = 1.0e6
+DT = 0.05
+save_every = 2
+downsample = 2
+debug = false
+entropy_delta = 0.6
+
+[output]
+base_dir = "results/data"
