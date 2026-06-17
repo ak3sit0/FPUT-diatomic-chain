@@ -76,9 +76,14 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
                     t = t[idx_ds]
                 end
 
-                hm = heatmap!(p1[i], t, 1:size(modal_E,1), log10.(modal_E .+ 1e-6),
+                # Normalizar energía a [0, 1] por cada Δκ
+                E_min = minimum(modal_E)
+                E_max = maximum(modal_E)
+                E_norm = (modal_E .- E_min) ./ (E_max - E_min + 1e-12)
+
+                hm = heatmap!(p1[i], t, 1:size(E_norm,1), E_norm,
                              title="Δκ = $δ", xlabel="Tiempo (ciclos)", ylabel="Modo",
-                             clim=(-6, 1), colorbar=true, cpalette=:viridis)
+                             clim=(0, 1), colorbar=true, cpalette=:blues)
             end
         end
     end
