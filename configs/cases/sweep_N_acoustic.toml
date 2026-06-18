@@ -11,13 +11,13 @@ param_values = [0.1]
 delta_values = [0.1]
 initial_condition = "mode"
 init_mode = 2
-initial_energy = 0.45
+initial_energy = 0.44
 
 [simulation]
 TMAX = 1.0e7
 T_block = 1.0e6
-DT = 0.05
-save_every = 2
+DT = 0.1
+save_every = 200000
 downsample = 2
 debug = false
 entropy_delta = 0.6

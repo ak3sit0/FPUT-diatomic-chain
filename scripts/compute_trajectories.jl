@@ -51,6 +51,12 @@ function run_case(idx, pval, delta, cfg)
     k, m = FPUTCore.make_system(sp)
     q_cur = zeros(cfg.N); v_cur = zeros(cfg.N)
     freq, V = FPUTCore.find_normal_modes(k, m, sp.boundary)
+
+    # Sorting modes by frequency to ensure consistent mode selection across cases
+    idx_sort = sortperm(freq)
+    freq = freq[idx_sort]
+    V    = V[:, idx_sort]
+
     # default to lowest acoustic mode
     target_mode = sp.boundary == :fixed ? 1 : 2
     amplitude = sqrt(2 * cfg.initial_energy) / freq[target_mode]

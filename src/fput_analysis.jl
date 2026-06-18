@@ -11,11 +11,13 @@ export compute_modal_energies, sliding_window_avg, spectral_entropy
 Transforms physical coordinates to modal space and computes energy.
 """
 function compute_modal_energies(q, v, freq, V, m)
-    # U = M^(-1/2) * V
-    U = Diagonal(1 ./ sqrt.(m)) * V
-    # x_modal = U^-1 * q_physical
-    q_m = U \ q
-    v_m = U \ v
+    # Use mass-weighted coordinates explicitly for numerical clarity:
+    # x = sqrt(m) .* q, v_x = sqrt(m) .* v
+    x = sqrt.(m) .* q
+    v_x = sqrt.(m) .* v
+    # modal coordinates: project onto orthonormal eigenvectors V
+    q_m = V' * x
+    v_m = V' * v_x
     return 0.5 .* (v_m.^2 .+ (freq.^2) .* q_m.^2)
 end
 

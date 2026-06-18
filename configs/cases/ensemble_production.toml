@@ -16,13 +16,13 @@ n_real        = 8
 seed_base     = 42
 
 [simulation]
-TMAX          = 1e8
-T_block       = 1e6
+TMAX          = 1e7
+T_block       = 5e5
 DT            = 0.05
 save_every    = 10000
 downsample    = 1
 entropy_delta = 0.6
-debug         = false
+debug         = true
 
 [output]
 base_dir = "results/data/ensemble_production"

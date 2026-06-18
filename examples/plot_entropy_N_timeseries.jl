@@ -13,6 +13,11 @@ gr()
 include("../src/fput_analysis.jl"); using .FPUTAnalysis
 
 const PLOT_MAX_POINTS = 2000 # max points per curve to plot (downsample if longer)
+const LINESTYLES = [:solid, :dash, :dot, :dashdot, :dashdotdot]
+
+function apply_recovery_style!()
+    default(titlefont=font(16), guidefont=font(14), tickfont=font(11), legendfont=font(12))
+end
 
 function main()
     if isempty(ARGS)
@@ -37,9 +42,10 @@ function main()
         end
     end
 
+    apply_recovery_style!()
     palette = [:blue, :red, :green, :orange, :purple, :brown, :magenta]
-    p = plot(xlabel=L"cycles", ylabel=L"S(t)", title="Spectral Entropy vs time for different N",
-             lw=2.5, legend=:outertopright, grid=true, size=(1000,600))
+    p = plot(xlabel=L"cycles", ylabel=L"$\bar{S}(t)$", title="Spectral Entropy vs time for different N",
+             lw=2.5, legend=:outertopright, grid=false, size=(1000,600), xscale = :log10, framestyle=:box)
 
     for (i, r) in enumerate(results)
         t_raw = getval(r, "scaled_t")
@@ -75,10 +81,27 @@ function main()
         Nval = getval(r, "N")
         lbl = Nval === nothing ? "entry_$i" : "N=$(Nval)"
         col = palette[mod1(i, length(palette))]
-        plot!(p, t, S, label = lbl, color=col, linewidth=2.2)
+        style = LINESTYLES[mod1(i, length(LINESTYLES))]
+        plot!(p, t, S, label = lbl, color=col, linewidth=2.2, linestyle=style)
     end
 
-    xlims!(p, 0, maximum(map(r->maximum(Vector{Float64}(r.scaled_t)), results)))
+    # compute positive time bounds (log scale cannot include 0)
+    all_pos = Float64[]
+    for r in results
+        t_raw = getval(r, "scaled_t")
+        if t_raw !== nothing
+            tvec = Float64.(t_raw)
+            pos = tvec[tvec .> 0]
+            if !isempty(pos)
+                append!(all_pos, pos)
+            end
+        end
+    end
+    if !isempty(all_pos)
+        xmins = minimum(all_pos)
+        xmaxs = maximum(all_pos)
+        xlims!(p, xmins, xmaxs)
+    end
     xlabel!(p, "Cycles (dimensionless)")
 
     out = replace(ARGS[1], ".jld2" => "_entropy_vs_N.pdf")

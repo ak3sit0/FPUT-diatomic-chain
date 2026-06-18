@@ -1,12 +1,18 @@
-# Load precomputed MODAL ENERGIES and plot entropy with moving average
-# Usage: julia --project=. examples/plot_entropy_data.jl configs/plot_entropy_alpha_periodic.toml
+"""
+    plot_entropy_param_sweep.jl
 
-using Plots, LaTeXStrings, JLD2, Statistics
-include("../src/config.jl");          using Main.Config
-include("../src/parameters.jl");      using Main.Parameters
-include("../src/energy_analysis.jl"); using Main.EnergyAnalysis
+Plot entropy and localization curves for parameter sweeps using the same
+grouping and visual style as the recovery scripts, but adapted to this repo's
+JLD2 layout.
 
-# Style constants (not experiment-specific — change here or in build_plot config)
+Usage:
+  julia --project=. scripts/plot_entropy_param_sweep.jl <plot_config.toml | results.jld2>
+"""
+
+using Plots, JLD2, LaTeXStrings
+include("../src/config.jl"); using Main.Config
+include("../src/fput_analysis.jl"); using .FPUTAnalysis
+
 const SMOOTH_DELTA = 0.6
 const EPS = 1e-18
 const LINESTYLES = [:solid, :dash, :dot, :dashdot, :dashdotdot]
@@ -17,17 +23,22 @@ struct ProcessedRun
     modal_E::Matrix{Float64}
 end
 
-# ==========================================================================
-# PHYSICAL HELPERS
-# ==========================================================================
+function build_plot_config(input_arg::Union{String,Nothing})
+    if isnothing(input_arg)
+        error("Usage: julia scripts/plot_entropy_param_sweep.jl <plot_config.toml | results.jld2>")
+    elseif endswith(lowercase(input_arg), ".jld2")
+        return Config.default_plot_config(input_arg)
+    else
+        return Config.load_plot_config(input_arg)
+    end
+end
 
 function smooth_modal_energies(modal_E::AbstractMatrix, delta::Float64)
     smoothed = similar(modal_E, Float64)
-    #for i in 1:size(modal_E, 1)
-    for i in eachindex(modal_E, 1)
-        smoothed[i, :] = EnergyAnalysis.sliding_delta_average(Float64.(modal_E[i, :]), delta)
+    for i in 1:size(modal_E, 1)
+        smoothed[i, :] = FPUTAnalysis.sliding_window_avg(Float64.(modal_E[i, :]), delta)
     end
-    return smoothed
+    smoothed
 end
 
 function entropy_from_smooth(E_smooth)
@@ -38,8 +49,7 @@ function entropy_from_smooth(E_smooth)
 end
 
 function compute_entropy_smooth(modal_E::Matrix; delta::Float64=SMOOTH_DELTA)
-    E_smooth = smooth_modal_energies(modal_E, delta)
-    entropy_from_smooth(E_smooth)
+    entropy_from_smooth(smooth_modal_energies(modal_E, delta))
 end
 
 function compute_xi_from_energies(modal_E::Matrix; delta::Float64=SMOOTH_DELTA)
@@ -50,7 +60,6 @@ function compute_xi_from_energies(modal_E::Matrix; delta::Float64=SMOOTH_DELTA)
 
     if mid >= N
         sum_upper = zeros(length(sum_all))
-        w_k = zeros(0, length(sum_all))
         S_upper = zeros(length(sum_all))
     else
         E_upper = E_smooth[mid+1:end, :]
@@ -63,17 +72,16 @@ function compute_xi_from_energies(modal_E::Matrix; delta::Float64=SMOOTH_DELTA)
     @. (2 * sum_upper / (sum_all .+ EPS)) * exp(S_upper) / N
 end
 
-# ==========================================================================
-# DATA PREPARATION
-# ==========================================================================
-
 function load_modal_results(path::String)
-    if !isfile(path)
-        error("File not found: $path")
-    end
+    isfile(path) || error("File not found: $path")
     println("Loading: $path")
     data = load(path)
-    (data["results"], data["config"])
+    results = data["results"]
+    config = data["config"]
+    if isa(config, String) && isfile(config)
+        config = Config.load_experiment_config(config)
+    end
+    return results, config
 end
 
 function prepare_run(res)
@@ -93,37 +101,26 @@ function group_results_by_param(results)
         push!(get!(grouped, param_val, Vector{ProcessedRun}()), prepare_run(res))
     end
     for runs in values(grouped)
-        sort!(runs, by=r->r.delta)
+        sort!(runs, by = r -> r.delta)
     end
     grouped
 end
 
-"""
-    filter_results(results, filter_params, filter_deltas) -> filtered results
-
-Keep only runs whose param ∈ filter_params AND delta ∈ filter_deltas.
-If either filter vector is empty, that dimension is not filtered (include all).
-"""
 function filter_results(results, filter_params::Vector{Float64}, filter_deltas::Vector{Float64})
     isempty(filter_params) && isempty(filter_deltas) && return results
     filter(r ->
         (isempty(filter_params) || any(p -> isapprox(Float64(r.param), p, rtol=1e-6), filter_params)) &&
         (isempty(filter_deltas) || any(d -> isapprox(Float64(r.Delta), d, rtol=1e-6), filter_deltas)),
-        results
-    )
+        results)
 end
 
-# ==========================================================================
-# PLOTTING HELPERS
-# ==========================================================================
-
 function apply_global_plot_style!()
-    default(titlefont=font(16), guidefont=font(14), tickfont=font(11), legendfont=font(12))
+    default(titlefont = font(16), guidefont = font(14), tickfont = font(11), legendfont = font(12))
 end
 
 function build_base_plot(ylabel::LaTeXString)
-    plot(xlabel=L"t", ylabel=ylabel, legend=:bottomright, framestyle=:box,
-         grid=false, xscale=:log10, size=(800, 600))
+    plot(xlabel = L"t", ylabel = ylabel, legend = :bottomright, framestyle = :box,
+         grid = false, xscale = :log10, size = (800, 600))
 end
 
 function label_for_delta(config, delta)
@@ -145,13 +142,13 @@ function plot_entropy_xi_for_param(param_val, runs, config, delta_smooth, outdir
             continue
         end
 
-        S = compute_entropy_smooth(run.modal_E; delta=delta_smooth)
-        xi = compute_xi_from_energies(run.modal_E; delta=delta_smooth)
+        S = compute_entropy_smooth(run.modal_E; delta = delta_smooth)
+        xi = compute_xi_from_energies(run.modal_E; delta = delta_smooth)
         style = LINESTYLES[mod1(j, length(LINESTYLES))]
         label_str = label_for_delta(config, run.delta)
 
-        plot!(p_S, run.times, S, label=label_str, lw=2.0, linestyle=style, alpha=0.8)
-        plot!(p_xi, run.times, xi, label=label_str, lw=2.0, linestyle=style, alpha=0.8)
+        plot!(p_S, run.times, S, label = label_str, lw = 2.0, linestyle = style, alpha = 0.8)
+        plot!(p_xi, run.times, xi, label = label_str, lw = 2.0, linestyle = style, alpha = 0.8)
         println("    ✓ Δ=$(run.delta) ($(length(run.times)) points)")
     end
 
@@ -164,18 +161,12 @@ function plot_entropy_xi_for_param(param_val, runs, config, delta_smooth, outdir
     println("Saved: $fname_xi\n")
 end
 
-# ==========================================================================
-# MAIN ENTRY
-# ==========================================================================
-
 function main()
     if isempty(ARGS)
-        error("Usage: julia plot_entropy_data.jl <plot_config.toml>\n" *
-              "Example: julia --project=. examples/plot_entropy_data.jl " *
-              "configs/plot_entropy_alpha_periodic.toml")
+        error("Usage: julia scripts/plot_entropy_param_sweep.jl <plot_config.toml | results.jld2>")
     end
 
-    pcfg = Config.load_plot_config(ARGS[1])
+    pcfg = build_plot_config(ARGS[1])
     apply_global_plot_style!()
     mkpath(pcfg.outdir_entropy)
     mkpath(pcfg.outdir_xi)
@@ -187,8 +178,7 @@ function main()
     println("Processing entropy and localization parameter ξ with moving average...\n")
 
     for param_val in sort(collect(keys(grouped)))
-        plot_entropy_xi_for_param(
-            param_val, grouped[param_val], config,
+        plot_entropy_xi_for_param(param_val, grouped[param_val], config,
             pcfg.smooth_delta, pcfg.outdir_entropy, pcfg.outdir_xi)
     end
 
