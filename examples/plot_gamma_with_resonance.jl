@@ -128,7 +128,7 @@ function plot_gamma_with_resonance(kA, kB, alfa; Nk=601, Ngrid=201)
         ax = Axis(fig[row, col],
                   xlabel=L"k_1", ylabel=L"k_2",
                   title=latexstring("\\left|\\Gamma_{$(names[n])}(k_1,k_2)\\right|"),
-                  xlabelsize=18, ylabelsize=18, titlesize=16)
+                  xlabelsize=22, ylabelsize=22, titlesize=20)
 
         # Heatmap del acoplamiento
         hm = heatmap!(ax, kplot, kplot, abs.(Gamma[n]),
@@ -147,7 +147,7 @@ function plot_gamma_with_resonance(kA, kB, alfa; Nk=601, Ngrid=201)
     # Supertítulo
     Label(fig[0, :],
           latexstring("\\left\\|\\Gamma_{\\sigma_1\\sigma_2\\sigma_3}(k_1,k_2)\\right\\|,\\quad k_3=-k_1-k_2,\\quad \\kappa_A=$(kA),\\;\\kappa_B=$(kB)"),
-          fontsize=18)
+          fontsize=22)
 
     mkpath("results/figures/coupling")
     save("./results/figures/coupling/Gamma_resonance_kA$(kA)_kB$(kB).png", fig)

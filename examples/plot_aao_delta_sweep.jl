@@ -3,8 +3,8 @@ using LinearAlgebra, CairoMakie, LaTeXStrings
 include(joinpath(@__DIR__, "plot_gamma_with_resonance.jl"))
 
 function plot_aao_delta_sweep(delta_values, alfa; Nk=601, Ngrid=201)
-    kplot = collect(range(-π, π, length=Ngrid))
-    aao_idx = 2  # "aao" es el índice 2 en names
+    kplot = collect(range(-π, π, length=Ngrid)) # Range of values of k to plot
+    aao_idx = 2  # "aao" is the second index 
 
     # Pre-calcular todos los |Γ_aao|
     aao_data = map(delta_values) do delta
@@ -28,7 +28,7 @@ function plot_aao_delta_sweep(delta_values, alfa; Nk=601, Ngrid=201)
         ax = Axis(fig[row, col],
                   xlabel=L"k_1", ylabel=L"k_2",
                   title=latexstring("\\Delta\\kappa = $(delta)"),
-                  xlabelsize=16, ylabelsize=16, titlesize=16)
+                  xlabelsize=24, ylabelsize=24, titlesize=24)
 
         last_hm = heatmap!(ax, kplot, kplot, Gaao;
                            colorrange=(0, global_max), colormap=:Blues)
@@ -40,12 +40,12 @@ function plot_aao_delta_sweep(delta_values, alfa; Nk=601, Ngrid=201)
 
     # Barra de color compartida
     Colorbar(fig[1:2, 4], last_hm;
-             label=L"|\Gamma_{aao}(k_1,k_2)|", labelsize=16)
+             label=L"|\Gamma_{aao}(k_1,k_2)|", labelsize=28)
 
     # Supertítulo
     Label(fig[0, :],
           latexstring("\\left|\\Gamma_{aao}(k_1,k_2)\\right|,\\quad k_3=-k_1-k_2,\\quad \\alpha=$(alfa)"),
-          fontsize=18)
+          fontsize=28)
 
     mkpath("results/figures/coupling")
     save("results/figures/coupling/Gamma_aao_delta_sweep.png", fig)

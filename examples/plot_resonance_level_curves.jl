@@ -19,11 +19,7 @@ function resonance_residual(k1, k2, delta)
     k3 = mod(-k1 - k2 + π, 2π) - π  # wrap correcto
     omega_plus(k3, delta) - omega_minus(k1, delta) - omega_minus(k2, delta)
 end
-
-#function compute_residual(k1_vals, k2_vals, delta)
-#    resonance_residual.(k1_vals, k2_vals', delta)
-#end
-
+ 
 function compute_residual(k1_vals, k2_vals, delta)
     # Si delta es exactamente 0, forzamos un residuo que NUNCA sea 0
     # para que las curvas de nivel [0.0] salgan completamente vacías.
@@ -62,7 +58,7 @@ function plot_resonance!(p, N, delta;
              yticks      = (all_ticks[idx], all_labels[idx]),
              xlim        = (xmin, xmax),
              ylim        = (xmin, xmax),
-             grid        = false,
+             grid        = true,
              colorbar    = false,
              guidefont   = font(guidefs),
              tickfont    = font(tickfs),
@@ -71,9 +67,9 @@ function plot_resonance!(p, N, delta;
 end
 
 function plot_multiple_resonance(N, delta_values;
-                                  colors    = [:red, :blue, :green, :orange, :purple],
                                   linestyles = [:solid, :dash, :dashdot, :dot, :dashdotdot],
                                   guidefs=14, tickfs=11, legendfs=12)
+    colors = [:darkblue, :steelblue, :cornflowerblue, :deepskyblue, :lightblue]
     p = plot(legend=:topright,
              guidefont  = font(guidefs),
              tickfont   = font(tickfs),

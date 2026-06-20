@@ -2,8 +2,8 @@ using LinearAlgebra, Plots, LaTeXStrings
 gr()
 
 # estética común
-default(titlefont=font(14, "Times"), guidefont=font(16, "Times"),
-        tickfont=font(14, "Times"), legendfont=font(14, "Times"))
+default(titlefont=font(16, "Times"), guidefont=font(18, "Times"),
+        tickfont=font(16, "Times"), legendfont=font(16, "Times"))
 
 # parámetros del sistema
 a = 1.0                                    # lattice constant
