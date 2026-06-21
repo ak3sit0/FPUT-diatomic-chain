@@ -15,9 +15,9 @@ k_reduced = range(0.0, stop=π/a, length=1200)
 # Δκ para la dispersión (spring constant disorder)
 # κ₁ = 1 + Δκ, κ₂ = 1 - Δκ
 Δκ_values_dispersion = [0.1, 0.3, 0.6, 0.9]
-linestyles = [:solid, :dash, :dot, :dashdot, :dashdotdot]
-colors = [:blue, :red, :green, :orange, :purple]
-linewidths = [0.9, 2.1, 3.0, 3.8]   # thin / medium / thick
+linestyles = [:solid, :dash, :dot, :dashdot]
+colors = [:darkblue, :steelblue, :royalblue, :cornflowerblue]
+linewidths = [2.4, 2.9, 3.3, 3.6]   # shades of blue with increasing width
 
 # funciones auxiliares para diatomic chain con spring disorder
 function compute_frequencies(Δκ::Float64, k_reduced::AbstractVector,
@@ -78,7 +78,7 @@ function plot_dispersion(Δκ_values::Vector{Float64},
     end
 
     mkpath("results/figures/dispersion_relation")
-    savefig(p, "results/figures/dispersion_relation/dispersion_relation_reduced_zone.pdf")
+    savefig(p, "results/figures/dispersion_relation/dispersion_relation_delta_k.pdf")
     return p
 end
 

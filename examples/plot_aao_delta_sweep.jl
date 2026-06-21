@@ -28,7 +28,7 @@ function plot_aao_delta_sweep(delta_values, alfa; Nk=601, Ngrid=201)
         ax = Axis(fig[row, col],
                   xlabel=L"k_1", ylabel=L"k_2",
                   title=latexstring("\\Delta\\kappa = $(delta)"),
-                  xlabelsize=24, ylabelsize=24, titlesize=24)
+                  xlabelsize=23, ylabelsize=23, titlesize=26)
 
         last_hm = heatmap!(ax, kplot, kplot, Gaao;
                            colorrange=(0, global_max), colormap=:Blues)
@@ -40,12 +40,12 @@ function plot_aao_delta_sweep(delta_values, alfa; Nk=601, Ngrid=201)
 
     # Barra de color compartida
     Colorbar(fig[1:2, 4], last_hm;
-             label=L"|\Gamma_{aao}(k_1,k_2)|", labelsize=28)
+             label=L"|\Gamma_{aao}(k_1,k_2)|", width=35, labelsize=36)
 
     # Supertítulo
     Label(fig[0, :],
           latexstring("\\left|\\Gamma_{aao}(k_1,k_2)\\right|,\\quad k_3=-k_1-k_2,\\quad \\alpha=$(alfa)"),
-          fontsize=28)
+          fontsize=30)
 
     mkpath("results/figures/coupling")
     save("results/figures/coupling/Gamma_aao_delta_sweep.png", fig)

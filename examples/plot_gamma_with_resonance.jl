@@ -133,7 +133,7 @@ function plot_gamma_with_resonance(kA, kB, alfa; Nk=601, Ngrid=201)
         # Heatmap del acoplamiento
         hm = heatmap!(ax, kplot, kplot, abs.(Gamma[n]),
                       colorrange=(0, maxabs), colormap=:Blues)
-        Colorbar(fig[row, col][1, 2], hm)
+        Colorbar(fig[row, col][1, 2], hm, width=30, labelsize=14)
 
         # Curva de resonancia específica del panel
         s1, s2, s3 = branch_by_panel[n]

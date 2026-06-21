@@ -87,23 +87,26 @@ function plot_gamma(kA, kB, alfa; Nk=601, Ngrid=201)
     fig = Figure(size=(1400, 1050))
     positions = [(i,j) for i in 1:3 for j in 1:3]
 
+    local last_hm
     for n in 1:8
         row, col = positions[n]
         ax = Axis(fig[row, col],
                   xlabel=L"k_1", ylabel=L"k_2",
                   title=latexstring("\\left|\\Gamma_{$(names[n])}(k_1,k_2)\\right|"),
-                  xlabelsize=18, ylabelsize=18, titlesize=16)
-        hm = heatmap!(ax, kplot, kplot, abs.(Gamma[n]),
+                  xlabelsize=22, ylabelsize=22, titlesize=28)
+        last_hm = heatmap!(ax, kplot, kplot, abs.(Gamma[n]),
                       colorrange=(0, maxabs), colormap=:Blues)
-        Colorbar(fig[row, col][1, 2], hm)
     end
+
+    # Barra de color compartida
+    Colorbar(fig[1:3, 4], last_hm, width=32, labelsize=32)
 
     # empty tile
     ax_empty = Axis(fig[3, 3]); hidedecorations!(ax_empty); hidespines!(ax_empty)
 
     Label(fig[0, :],
           latexstring("\\left|\\Gamma_{\\sigma_1\\sigma_2\\sigma_3}(k_1,k_2)\\right|,\\quad k_3=-k_1-k_2,\\quad \\kappa_A=$(kA),\\;\\kappa_B=$(kB)"),
-          fontsize=18)
+          fontsize=30)
 
     save("./results/figures/coupling/Gamma_kA$(kA)_kB$(kB).png", fig)
     return fig

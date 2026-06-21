@@ -160,29 +160,60 @@ function plot_scattering_rate(delta_values, R_vals; outdir="results/figures/scat
 
     i_max = argmax(R_norm)
     Δκ_opt = delta_values[i_max]
+    R_half_max = 0.5
 
-    fig = Figure(size=(700, 450))
+    # Convertir Δκ a η = (1 - Δκ)/(1 + Δκ)
+    eta_values = @. (1 - delta_values) / (1 + delta_values)
+    eta_opt = (1 - Δκ_opt) / (1 + Δκ_opt)
+
+    fig = Figure(size=(1100, 650))
     ax  = Axis(fig[1, 1],
-               xlabel=L"\Delta\kappa",
-               ylabel=L"\mathcal{R}(\Delta\kappa) / \mathcal{R}_\mathrm{max}",
-               title=L"Effective acoustic-optical scattering rate $\mathcal{R}(\eta)$",
-               xlabelsize=18, ylabelsize=18, titlesize=16)
+               xlabel=L"\eta = \frac{1-\Delta\kappa}{1+\Delta\kappa}",
+               ylabel=L"R(\eta) / R_\mathrm{max}",
+               title=L"Effective acoustic-optical scattering rate $R(\eta)$",
+               xlabelsize=24, ylabelsize=24, titlesize=22)
 
-    lines!(ax, delta_values, R_norm, linewidth=2.5, color=:royalblue)
-    scatter!(ax, [Δκ_opt], [1.0], color=:orangered, markersize=12,
-             label=latexstring("\\Delta\\kappa^* \\approx $(round(Δκ_opt, digits=3))"))
-    vlines!(ax, [Δκ_opt], linestyle=:dash, color=:orangered, linewidth=1.5)
-    axislegend(ax, position=:rt, labelsize=14)
+    # Agregar grid sutil
+    hlines!(ax, [0.0, 0.25, 0.5, 0.75, 1.0], color=:gray, alpha=0.2, linewidth=0.5)
+    vlines!(ax, collect(0.0:0.1:1.0), color=:gray, alpha=0.2, linewidth=0.5)
+
+    # Establecer límites del eje x
+    xlims!(ax, 0.30, 0.95)
+
+    # Zona resonante: sombrear donde R > 0.5×R_max (azul claro)
+    resonant_mask = R_norm .>= R_half_max
+    if any(resonant_mask)
+        for i in 1:(length(eta_values)-1)
+            if resonant_mask[i] || resonant_mask[i+1]
+                η_start = eta_values[i]
+                η_end = eta_values[i+1]
+                band!(ax, [η_start, η_end], [0, 0], [1.0, 1.0], color=(:steelblue, 0.2))
+            end
+        end
+    end
+
+    # Curva principal (azul oscuro)
+    lines!(ax, eta_values, R_norm, linewidth=3.5, color=:darkblue, label=L"R(\eta)")
+
+    # Punto máximo prominente (azul muy oscuro)
+    scatter!(ax, [eta_opt], [1.0], color=:darkblue, markersize=20, strokewidth=2,
+             strokecolor=:white, label=latexstring("\\text{Maximum at } \\eta \\approx $(round(eta_opt, digits=3))"))
+
+    # Línea vertical en el máximo (azul oscuro, punteada)
+    vlines!(ax, [eta_opt], linestyle=:dash, color=:darkblue, linewidth=2.0, alpha=0.7)
+
+    # Leyenda limpia
+    axislegend(ax, position=:lt, fontsize=16, framevisible=true,
+               backgroundcolor=(:white, 0.8), labelsize=16)
 
     save(joinpath(outdir, "scattering_rate_vs_delta.png"), fig)
     return fig
 end
 
 # ── Entry point ───────────────────────────────────────────────────────────────
-
 if abspath(PROGRAM_FILE) == @__FILE__
-    # Dense sweep — skip Δκ=0, stop before Δκ_c≈0.5
-    delta_values = vcat(0.02:0.02:0.08, 0.10:0.05:0.48)
+    # Dense sweep from 0.05 to 0.5
+    delta_values = collect(0.05:0.01:0.50)
 
     R_vals = sweep_scattering_rate(delta_values; Nk=601, Ngrid=401)
 
