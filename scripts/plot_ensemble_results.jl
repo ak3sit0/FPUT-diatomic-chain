@@ -1,10 +1,11 @@
 """
     plot_ensemble_results.jl
 
-Visualización de resultados del ensamble de fases (estilo CairoMakie):
+Visualización de resultados del ensamble de fases (estilo CairoMakie, layouts corregidos):
   - Heatmap de energía modal vs tiempo para Δκ ∈ {0.1, 0.3, 0.5}
   - Entropía S̄(t) y dispersión σ(S) vs tiempo para cada Δκ
   - Resumen global: S̄(∞) y E_opt/E_total vs Δκ
+  - Tiempo de termalización T_th vs Δκ
 
 Usage:
   julia --project=. scripts/plot_ensemble_results.jl results/data/ensemble_production/ensemble_results_YYYY-MM-DD.jld2
@@ -12,8 +13,17 @@ Usage:
 
 using JLD2, CairoMakie, Statistics, LaTeXStrings, Colors
 
-# Gradiente custom de blues (rescatado de plot_heatmap_grid.jl)
 const BLUES_GRADIENT = cgrad([:white, "#B2D9FF", "#5999F2", "#3359CC", "#0D4CB3"])
+
+function compute_thermalization_time(t::Vector, E_opt::Vector; threshold=0.9)
+    """Calcula el tiempo en que E_opt alcanza el 90% de su valor asintótico."""
+    if isempty(E_opt) || length(t) != length(E_opt)
+        return NaN
+    end
+    E_inf = mean(E_opt[max(1, round(Int, 0.9*length(E_opt))):end])
+    idx = findfirst(e -> e >= threshold * E_inf, E_opt)
+    return isnothing(idx) ? NaN : t[idx]
+end
 
 function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/ensemble")
     mkpath(outdir)
@@ -41,6 +51,7 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
     S_final_means = Float64[]
     S_final_stds = Float64[]
     E_opt_finals = Float64[]
+    T_th_values = Float64[]
 
     for result in results
         push!(all_deltas, result.Delta)
@@ -50,6 +61,10 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
         E_total = sum(result.E_acoustic_mean[end]) + sum(result.E_optical_mean[end])
         E_opt_frac = sum(result.E_optical_mean[end]) / E_total
         push!(E_opt_finals, E_opt_frac)
+
+        # Calcular tiempo de termalización
+        t_th = compute_thermalization_time(result.scaled_t, result.E_optical_mean)
+        push!(T_th_values, t_th)
     end
 
     # Ordenar por Δκ
@@ -58,10 +73,14 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
     S_final_means = S_final_means[idx_sort]
     S_final_stds = S_final_stds[idx_sort]
     E_opt_finals = E_opt_finals[idx_sort]
+    T_th_values = T_th_values[idx_sort]
 
-    # --- Figura 1: Heatmaps de energía modal (CairoMakie) ---
-    fig1 = Figure(size=(1500, 450))
+    # --- Figura 1: Heatmaps de energía modal ---
+    n_cols = length(delta_targets)
+    fig1 = Figure(size=(500*n_cols + 150, 500))
     ga1 = fig1[1, 1] = GridLayout()
+
+    hm_ref = nothing
 
     for (i, δ) in enumerate(delta_targets)
         if haskey(cases_by_delta, δ)
@@ -70,7 +89,6 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
             t = result.scaled_t
 
             if !isempty(modal_E) && length(t) > 0
-                # Downsample si es muy grande
                 nt = size(modal_E, 2)
                 if nt > 1000
                     idx_ds = round.(Int, range(1, nt, length=1000))
@@ -78,31 +96,41 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
                     t = t[idx_ds]
                 end
 
-                # Normalizar energía a [0, 1] por cada Δκ
                 E_min = minimum(modal_E)
                 E_max = maximum(modal_E)
                 E_norm = (modal_E .- E_min) ./ (E_max - E_min + 1e-12)
 
                 ax = Axis(ga1[1, i];
                     title=latexstring("\\Delta\\kappa = $δ"),
-                    xlabel="Tiempo (ciclos)", ylabel="Modo",
-                    titlesize=16, xlabelsize=12, ylabelsize=12)
+                    xlabel="", ylabel="Mode",
+                    titlesize=16, xlabelsize=11, ylabelsize=11,
+                    xticklabelsvisible = (i == n_cols),
+                    yticklabelsvisible = (i == 1))
 
                 hm = heatmap!(ax, t, 1:size(E_norm,1), E_norm';
                     colormap=BLUES_GRADIENT, colorrange=(0, 1))
 
-                if i == length(delta_targets)
-                    Colorbar(fig1[1, i+1], hm; label="Energía normalizada")
+                if isnothing(hm_ref)
+                    hm_ref = hm
                 end
             end
         end
     end
 
-    save(joinpath(outdir, "01_modal_energy_heatmaps.png"), fig1; px_per_unit=2)
-    println("Guardado: $(outdir)/01_modal_energy_heatmaps.png")
+    # Colorbar en columna 2 de fig1 (hermana de ga1)
+    Colorbar(fig1[1, 2], hm_ref; label="Normalized energy", width=20, ticklabelsize=11)
 
-    # --- Figura 2: Entropía vs tiempo para cada Δκ representativo ---
-    fig2 = Figure(size=(1500, 450))
+    # Etiqueta global eje X
+    Label(fig1[2, 1], "Time (cycles)"; fontsize=13)
+
+    # Espaciado entre paneles
+    colgap!(ga1, 15)
+
+    save(joinpath(outdir, "01_modal_energy_heatmaps.png"), fig1; px_per_unit=2)
+    println("Saved: $(outdir)/01_modal_energy_heatmaps.png")
+
+    # --- Figura 2: Entropía vs tiempo ---
+    fig2 = Figure(size=(500*n_cols + 150, 500))
     ga2 = fig2[1, 1] = GridLayout()
 
     for (i, δ) in enumerate(delta_targets)
@@ -115,8 +143,10 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
             if length(t) > 0 && length(S_mean) > 0
                 ax = Axis(ga2[1, i];
                     title=latexstring("\\Delta\\kappa = $δ"),
-                    xlabel="Tiempo (ciclos)", ylabel="Entropía espectral",
-                    titlesize=16, xlabelsize=12, ylabelsize=12)
+                    xlabel="", ylabel="Spectral entropy",
+                    titlesize=16, xlabelsize=11, ylabelsize=11,
+                    xticklabelsvisible = (i == n_cols),
+                    yticklabelsvisible = (i == 1))
 
                 band!(ax, t, S_mean .- S_std, S_mean .+ S_std, alpha=0.3, color="#5999F2")
                 lines!(ax, t, S_mean, color="#0D4CB3", linewidth=2)
@@ -124,16 +154,19 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
         end
     end
 
-    save(joinpath(outdir, "02_entropy_vs_time.png"), fig2; px_per_unit=2)
-    println("Guardado: $(outdir)/02_entropy_vs_time.png")
+    Label(fig2[2, 1], "Time (cycles)"; fontsize=13)
+    colgap!(ga2, 15)
 
-    # --- Figura 3: Resumen global (2 paneles) ---
+    save(joinpath(outdir, "02_entropy_vs_time.png"), fig2; px_per_unit=2)
+    println("Saved: $(outdir)/02_entropy_vs_time.png")
+
+    # --- Figura 3: Resumen global ---
     fig3 = Figure(size=(1000, 800))
     ga3 = fig3[1, 1] = GridLayout()
 
     # Panel 3a: Entropía final vs Δκ
     ax_s = Axis(ga3[1, 1];
-        title="Entropía final vs Δκ",
+        title="Final entropy vs Δκ",
         xlabel=latexstring("\\Delta\\kappa"), ylabel=latexstring("\\bar{S}(\\infty)"),
         titlesize=14, xlabelsize=12, ylabelsize=12)
 
@@ -145,7 +178,7 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
 
     # Panel 3b: Energía óptica relativa vs Δκ
     ax_e = Axis(ga3[2, 1];
-        title="Fracción de energía óptica vs Δκ",
+        title="Optical energy fraction vs Δκ",
         xlabel=latexstring("\\Delta\\kappa"), ylabel=latexstring("E_{\\mathrm{opt}} / E_{\\mathrm{tot}}"),
         titlesize=14, xlabelsize=12, ylabelsize=12)
 
@@ -154,15 +187,48 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
     hlines!(ax_e, [0.5], color=:gray, linestyle=:dash, linewidth=1)
     ylims!(ax_e, 0.2, 0.55)
 
-    rowgap!(ga3, 15)
+    rowgap!(ga3, 20)
     save(joinpath(outdir, "03_global_summary.png"), fig3; px_per_unit=2)
-    println("Guardado: $(outdir)/03_global_summary.png")
+    println("Saved: $(outdir)/03_global_summary.png")
 
-    println("\n=== Resumen de resultados ===")
-    println("Δκ\tS̄(∞)\t\tE_opt/E_tot")
-    println("---\t-------\t\t-----------")
-    for (δ, S, E_opt) in zip(all_deltas, S_final_means, E_opt_finals)
-        println("$(round(δ; digits=2))\t$(round(S; digits=3))\t\t$(round(E_opt; digits=3))")
+    # --- Figura 4: Tiempo de termalización ---
+    fig4 = Figure(size=(1000, 800))
+    ga4 = fig4[1, 1] = GridLayout()
+
+    # Panel 4a: T_th vs Δκ
+    ax_th = Axis(ga4[1, 1];
+        title="Thermalization time vs Δκ",
+        xlabel=latexstring("\\Delta\\kappa"), ylabel=latexstring("T_{\\mathrm{th}} \\; (\\mathrm{cycles})"),
+        titlesize=14, xlabelsize=12, ylabelsize=12,
+        yscale=log10)
+
+    valid_th = .!isnan.(T_th_values)
+    if any(valid_th)
+        scatter!(ax_th, all_deltas[valid_th], T_th_values[valid_th], color="#0D4CB3", markersize=8)
+        lines!(ax_th, all_deltas[valid_th], T_th_values[valid_th], color="#0D4CB3", linewidth=2)
+    end
+
+    # Panel 4b: E_opt equilibrium vs Δκ
+    ax_eq = Axis(ga4[2, 1];
+        title="Equilibrium optical energy fraction",
+        xlabel=latexstring("\\Delta\\kappa"), ylabel=latexstring("E_{\\mathrm{opt}}^{\\mathrm{eq}} / E_{\\mathrm{tot}}"),
+        titlesize=14, xlabelsize=12, ylabelsize=12)
+
+    scatter!(ax_eq, all_deltas, E_opt_finals, color="#0D4CB3", markersize=8)
+    lines!(ax_eq, all_deltas, E_opt_finals, color="#0D4CB3", linewidth=2)
+    hlines!(ax_eq, [0.5], color=:gray, linestyle=:dash, linewidth=1)
+    ylims!(ax_eq, 0.2, 0.55)
+
+    rowgap!(ga4, 20)
+    save(joinpath(outdir, "04_thermalization_time.png"), fig4; px_per_unit=2)
+    println("Saved: $(outdir)/04_thermalization_time.png")
+
+    println("\n=== Thermalization times ===")
+    println("Δκ\tT_th (cycles)\tE_opt/E_tot")
+    println("---\t-----------\t-----------")
+    for (δ, t_th, e_opt) in zip(all_deltas, T_th_values, E_opt_finals)
+        t_str = isnan(t_th) ? "∞" : "$(round(t_th; digits=1))"
+        println("$(round(δ; digits=2))\t$t_str\t\t$(round(e_opt; digits=3))")
     end
 end
 
