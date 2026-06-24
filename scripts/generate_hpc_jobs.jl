@@ -1,92 +1,152 @@
 """
     generate_hpc_jobs.jl
 
-Orquestador para barridos de parámetros en clúster (HPC).
-Genera archivos .pbs y .toml para cada configuración sin ejecutarlos, 
-permitiendo al usuario encolar (qsub) de manera offline e independiente.
+Generador de jobs PBS/Torque para ensambles multi-N en clúster HPC.
+Lee una config maestra con `N_values` y genera un .toml + .pbs por cada N.
+
+Ventajas:
+  - Un job por N → fallos aislados, relanzables independientemente
+  - Recursos escalados automáticamente (cores y walltime según N)
+  - Workflow offline: generar → revisar → qsub
 
 Usage:
-    julia scripts/generate_hpc_jobs.jl --template configs/templates/test_quick.toml --sweep N
+  julia --project=. scripts/generate_hpc_jobs.jl configs/templates/ensemble_N_sweep.toml
+
+Output:
+  - jobs/ensemble_N<N>.toml (config mutada)
+  - jobs/ensemble_N<N>.pbs (script PBS)
 """
 
 using TOML
+using Dates: today
 
-function write_job(base_toml, sweep_name, param_name, param_val)
-    # Genera una copia mutada del TOML
-    cfg = deepcopy(base_toml)
-    
-    # Mutar el parámetro según la semántica
-    if param_name == "N"
-        cfg["physics"]["N"] = param_val
-    elseif param_name == "alpha"
-        cfg["physics"]["nonlinear"] = "alpha"
-        cfg["physics"]["param_values"] = [param_val]
-    elseif param_name == "beta"
-        cfg["physics"]["nonlinear"] = "beta"
-        cfg["physics"]["param_values"] = [param_val]
+function resources_for_N(N)
+    """Retorna (ppn, walltime) escalados según N."""
+    if N <= 64
+        return (ppn=8, walltime="12:00:00")
+    elseif N <= 128
+        return (ppn=16, walltime="24:00:00")
+    else  # N = 256
+        return (ppn=16, walltime="48:00:00")
     end
-    
-    # Nombramiento
-    job_id = "$(sweep_name)_$(param_name)_$(param_val)"
-    toml_path = "jobs/$job_id.toml"
-    pbs_path = "jobs/$job_id.pbs"
-    
-    # Escribir el nuevo TOML
+end
+
+function write_job_files(base_toml::Dict, N::Int, output_dir::String)
+    """Genera .toml y .pbs para un N específico."""
+    cfg = deepcopy(base_toml)
+
+    # Remover N_values si existe, poner N fijo
+    if haskey(cfg["physics"], "N_values")
+        delete!(cfg["physics"], "N_values")
+    end
+    cfg["physics"]["N"] = N
+
+    # Mutate base_dir con sufijo _N<N>
+    original_base = get(cfg["output"], "base_dir", "results/data/ensemble_N_sweep")
+    cfg["output"]["base_dir"] = "$(original_base)_N$(N)"
+
+    # Nombres de archivos
+    toml_path = joinpath(output_dir, "ensemble_N$(N).toml")
+    pbs_path = joinpath(output_dir, "ensemble_N$(N).pbs")
+
+    # Escribir TOML mutado
     open(toml_path, "w") do io
         TOML.print(io, cfg)
     end
-    
-    # Escribir la macro PBS línea por línea (evita problemas de parsing con interpolación)
+
+    # Recursos escalados
+    res = resources_for_N(N)
+    ppn = res.ppn
+    walltime = res.walltime
+
+    # Escribir PBS script
     open(pbs_path, "w") do io
         println(io, "#!/bin/bash")
-        println(io, "#PBS -N FPUT_$(job_id)")
-        println(io, "#PBS -l nodes=1:ppn=8")
-        println(io, "#PBS -l walltime=24:00:00")
-        println(io, "#PBS -o results/raw/log_$(job_id).out")
+        println(io, "#PBS -N ensemble_N$(N)")
+        println(io, "#PBS -l nodes=1:ppn=$(ppn)")
+        println(io, "#PBS -l walltime=$(walltime)")
+        println(io, "#PBS -o results/logs/ensemble_N$(N)_\$(date +%Y%m%d_%H%M%S).log")
         println(io, "#PBS -j oe")
         println(io)
         println(io, "cd \$PBS_O_WORKDIR")
-        println(io, "julia --project=. examples/fput_literate_sim.jl $toml_path")
+        println(io, "echo \"Starting ensemble N=$(N) on \$(hostname) at \$(date)\"")
+        println(io, "echo \"Available cores: \$(nproc)\"")
+        println(io)
+        println(io, "julia --project=. -t $(ppn) scripts/compute_ensemble.jl $(toml_path)")
+        println(io)
+        println(io, "echo \"Finished ensemble N=$(N) at \$(date)\"")
     end
-    
-    return pbs_path
+
+    # Resultado
+    return (toml=toml_path, pbs=pbs_path, ppn=ppn, walltime=walltime)
 end
 
-function generate_sweep(template_path::String, sweep_param::String)
-    println("--- Generando Sweep HPC para $sweep_param ---")
-    mkpath("jobs")
-    
+function main()
+    if isempty(ARGS)
+        println("Usage: julia scripts/generate_hpc_jobs.jl <config_template.toml>")
+        println("Example: julia scripts/generate_hpc_jobs.jl configs/templates/ensemble_N_sweep.toml")
+        return
+    end
+
+    template_path = ARGS[1]
+    if !isfile(template_path)
+        error("Config template not found: $template_path")
+    end
+
     base_toml = TOML.parsefile(template_path)
-    
-    # Array de valores hipotéticos para el barrido
-    sweep_values = if sweep_param == "N"
-        [32, 64, 128, 256, 512]
-    elseif sweep_param == "alpha"
-        [0.05, 0.1, 0.25, 0.5, 1.0]
-    elseif sweep_param == "beta"
-        [0.05, 0.1, 0.25, 0.5, 1.0]
+    output_dir = "jobs"
+    mkpath(output_dir)
+    mkpath("results/logs")
+
+    # Extraer N_values de la config maestra
+    N_values = if haskey(base_toml["physics"], "N_values")
+        Vector{Int}(base_toml["physics"]["N_values"])
     else
-        error("Sweep parametro no soportado: $sweep_param (Use N, alpha o beta)")
+        error("Config debe contener 'N_values' en [physics]")
     end
-    
+
+    println("=== Generador HPC: Ensamble Multi-N ===")
+    println("Config: $template_path")
+    println("N_values: $N_values")
+    println()
+
     generated = []
-    
-    for val in sweep_values
-        pbs = write_job(base_toml, "HPC_Sweep", sweep_param, val)
-        push!(generated, pbs)
-        println("  · Generado: $pbs")
+
+    for N in N_values
+        result = write_job_files(base_toml, N, output_dir)
+        push!(generated, (N=N, result=result))
+
+        println("✓ N=$N")
+        println("  TOML:   $(result.toml)")
+        println("  PBS:    $(result.pbs)")
+        println("  Recurso: ppn=$(result.ppn), walltime=$(result.walltime)")
+        println()
     end
-    
-    println("\\nPara lanzar los trabajos, usa:")
-    println("  for job in jobs/*.pbs; do qsub \\\$job; done")
+
+    # Sumario y comandos
+    println("\n=== Sumario ===")
+    println("$(length(generated)) jobs generados en 'jobs/'")
+    println()
+
+    println("=== Próximos pasos ===")
+    println()
+    println("1. Revisar los archivos generados:")
+    println("   ls -lh jobs/")
+    println()
+    println("2. Inspeccionar un PBS (opcional):")
+    println("   cat jobs/ensemble_N64.pbs")
+    println()
+    println("3. Test local (antes de enviar a clúster):")
+    println("   julia --project=. -t 4 scripts/compute_ensemble.jl jobs/ensemble_N32.toml")
+    println()
+    println("4. Enviar todos los jobs al clúster:")
+    println("   for job in jobs/ensemble_N*.pbs; do qsub \$job; done")
+    println()
+    println("5. Monitorear progreso:")
+    println("   qstat")
+    println("   tail -f results/logs/ensemble_N*.log")
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    if length(ARGS) >= 2 && ARGS[1] == "--template"
-        template = ARGS[2]
-        sweep_param = length(ARGS) >= 4 && ARGS[3] == "--sweep" ? ARGS[4] : "N"
-        generate_sweep(template, sweep_param)
-    else
-        println("Uso: julia scripts/generate_hpc_jobs.jl --template <ruta.toml> --sweep <N|alpha|beta>")
-    end
+    main()
 end

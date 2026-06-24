@@ -255,6 +255,7 @@ function run_ensemble_case(case_idx, pval, delta, cfg)
 
     # Acumuladores
     entropy_realizations  = Vector{Vector{Float64}}()
+    E_optical_realizations = Vector{Vector{Float64}}()  # nueva: guardar E_opt de cada realización
     modal_E_mean_accum    = nothing
     E_ac_mean_accum       = nothing
     E_opt_mean_accum      = nothing
@@ -282,6 +283,7 @@ function run_ensemble_case(case_idx, pval, delta, cfg)
 
         n_ok += 1
         push!(entropy_realizations, result.entropy)
+        push!(E_optical_realizations, result.E_optical)  # nueva línea
         T_ref = result.scaled_t
 
         # Acumulación incremental con peso 1/n_real (se renormaliza al final si n_ok < n_real)
@@ -321,20 +323,21 @@ function run_ensemble_case(case_idx, pval, delta, cfg)
     println("[case $case_idx] Finalizado. S̄=$(round(entropy_mean[end];digits=4)) ± $(round(entropy_std[end];digits=4))")
 
     return (
-        param                = pval,
-        Delta                = delta,
-        scaled_t             = T_ref,
-        entropy_mean         = entropy_mean,
-        entropy_std          = entropy_std,
-        modal_E_mean         = modal_E_mean_accum,
-        E_acoustic_mean      = E_ac_mean_accum,
-        E_optical_mean       = E_opt_mean_accum,
-        entropy_realizations = entropy_realizations,
-        n_real               = n_real,
-        seed_base            = cfg.seed_base,
-        branch               = cfg.branch,
-        k_band               = collect(k_band),
-        E_total              = cfg.E_total,
+        param                  = pval,
+        Delta                  = delta,
+        scaled_t               = T_ref,
+        entropy_mean           = entropy_mean,
+        entropy_std            = entropy_std,
+        modal_E_mean           = modal_E_mean_accum,
+        E_acoustic_mean        = E_ac_mean_accum,
+        E_optical_mean         = E_opt_mean_accum,
+        entropy_realizations   = entropy_realizations,
+        E_optical_realizations = E_optical_realizations,  # nueva: per-realización
+        n_real                 = n_real,
+        seed_base              = cfg.seed_base,
+        branch                 = cfg.branch,
+        k_band                 = collect(k_band),
+        E_total                = cfg.E_total,
     )
 end
 

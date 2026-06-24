@@ -1,33 +1,58 @@
 # Julia
 *.jl.swp
 *.jl.swo
+*.jl.bak
 *~
 .julia/
 Manifest.lock
+*.o
+*.a
+*.so
 
-# Results (large data)
-results/raw/**/
+# Results & Data (large files)
+results/raw/
 results/logs/
-results/data/**/
+results/data/
 *.jld2
 *.h5
+*.jld
 
-# Figures (keep structure, ignore large files)
-results/figures/**/
+# Figures
+results/figures/
 *.png
 *.pdf
 *.svg
+*.eps
 
 # OS
 .DS_Store
 .~*
 Thumbs.db
+desktop.ini
 
-# IDE
+# IDE & Editor
 .vscode/
 .idea/
 *.sublime-workspace
+*.sublime-project
+*.swp
+*.swo
+*~
 
-# Temporary
+# Temporary & Cache
 *.tmp
 .cache/
+__pycache__/
+.ipynb_checkpoints/
+*.pyc
+
+# Build artifacts
+/build/
+/dist/
+*.egg-info/
+
+# HPC
+jobs/*.pbs
+jobs/*.log
+*.e*
+*.o*

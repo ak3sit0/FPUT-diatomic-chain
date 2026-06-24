@@ -171,7 +171,8 @@ function plot_scattering_rate(delta_values, R_vals; outdir="results/figures/scat
                xlabel=L"\eta = \frac{1-\Delta\kappa}{1+\Delta\kappa}",
                ylabel=L"R(\eta) / R_\mathrm{max}",
                title=L"Effective acoustic-optical scattering rate $R(\eta)$",
-               xlabelsize=24, ylabelsize=24, titlesize=22)
+               xlabelsize=25, ylabelsize=25, titlesize=28,
+               xticklabelsize=18, yticklabelsize=18)
 
     # Agregar grid sutil
     hlines!(ax, [0.0, 0.25, 0.5, 0.75, 1.0], color=:gray, alpha=0.2, linewidth=0.5)
@@ -196,7 +197,7 @@ function plot_scattering_rate(delta_values, R_vals; outdir="results/figures/scat
     lines!(ax, eta_values, R_norm, linewidth=3.5, color=:darkblue, label=L"R(\eta)")
 
     # Punto máximo prominente (azul muy oscuro)
-    scatter!(ax, [eta_opt], [1.0], color=:darkblue, markersize=20, strokewidth=2,
+    scatter!(ax, [eta_opt], [1.0], color=:darkblue, markersize=22, strokewidth=4,
              strokecolor=:white, label=latexstring("\\text{Maximum at } \\eta \\approx $(round(eta_opt, digits=3))"))
 
     # Línea vertical en el máximo (azul oscuro, punteada)
@@ -204,7 +205,7 @@ function plot_scattering_rate(delta_values, R_vals; outdir="results/figures/scat
 
     # Leyenda limpia
     axislegend(ax, position=:lt, fontsize=16, framevisible=true,
-               backgroundcolor=(:white, 0.8), labelsize=16)
+               backgroundcolor=(:white, 0.8), labelsize=24)
 
     save(joinpath(outdir, "scattering_rate_vs_delta.png"), fig)
     return fig
