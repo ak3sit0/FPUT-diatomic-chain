@@ -231,6 +231,133 @@ julia --project=. examples/plot_thermalization_time.jl \
 
 ---
 
+---
+
+## 📊 Sistema de Logging y Error Handling
+
+### Cómo se capturan errores
+
+Cada PBS script ahora:
+
+1. **Genera un archivo log principal:**
+   ```
+   results/logs/ensemble_N64_<JOBID>.log
+   ```
+   Contiene TODO lo que Julia imprime (stdout + stderr mezclados)
+
+2. **Genera marcadores de estado:**
+   ```
+   results/logs/ensemble_N64_<JOBID>.SUCCESS  ← si completó ok
+   results/logs/ensemble_N64_<JOBID>.FAILED   ← si falló
+   ```
+
+3. **Captura el exit code:**
+   El script falla si Julia falla (`set -e`), y reporta claramente
+
+### Revisar logs después de ejecución
+
+**Opción 1: Script automático (recomendado)**
+
+```bash
+julia --project=. scripts/check_hpc_status.jl
+```
+
+Output esperado:
+```
+================================================================================
+HPC JOB STATUS REPORT
+================================================================================
+
+N       | Status               | Output     | Size
+--------|----------------------|------------|------------------
+32      | ✓ SUCCESS            | ✓ Exists   | 2.45 GB
+64      | ✓ SUCCESS            | ✓ Exists   | 4.12 GB
+128     | ✗ FAILED             | ✗ Missing  | —
+256     | ⏳ RUNNING/QUEUED    | ✗ Missing  | —
+
+================================================================================
+
+[32] ✓ Completed successfully
+     Log: ensemble_N32_12345.log
+     Output: results/data/ensemble_N_sweep_N32/
+
+[64] ✓ Completed successfully
+     Log: ensemble_N64_12346.log
+     Output: results/data/ensemble_N_sweep_N64/
+
+[128] ✗ FAILED - Ver detalles:
+     Failed marker: ensemble_N128_12347.FAILED
+     Log: results/logs/ensemble_N128_12347.log
+
+     --- LAST 30 LINES OF LOG ---
+     Traceback error: segmentation fault in Julia thread...
+     --- END OF LOG ---
+
+[256] ⏳ Still running or in queue
+     Log: results/logs/ensemble_N256_12348.log
+     Ver progreso en tiempo real:
+       tail -f results/logs/ensemble_N256_12348.log
+```
+
+**Opción 2: Ver logs manualmente**
+
+```bash
+# Ver último log de N=64
+cat results/logs/ensemble_N64_*.log
+
+# Ver solo últimas 50 líneas
+tail -50 results/logs/ensemble_N64_*.log
+
+# Seguir en tiempo real mientras corre
+tail -f results/logs/ensemble_N64_*.log
+
+# Buscar errores específicos
+grep -i "error\|failed\|exception" results/logs/ensemble_N64_*.log
+```
+
+### Qué significa cada archivo marker
+
+| Archivo | Significado | Acción |
+|---------|------------|--------|
+| `.SUCCESS` | Job completó sin errores | Analizar resultados |
+| `.FAILED` | Job falló (ver log) | Revisar log, relanzar |
+| Ninguno | Job aún no terminó o en cola | Esperar, ver con `qstat` |
+
+### Si un job falla
+
+**1. Ver el error en el log:**
+```bash
+tail -100 results/logs/ensemble_N128_12347.log
+```
+
+**2. Entender el error** (ejemplos comunes):
+
+```
+Error: OutOfMemoryError
+→ Aumentar walltime o reducir n_real
+
+StackOverflow / Segmentation fault
+→ Bug en Julia o en el código FPUT
+
+Killed by signal 9 (OOM killer)
+→ Cluster mató el job por memoria, aumentar N_blocks
+
+julia: not found
+→ Julia no está en PATH, revisar ~/.bashrc en cluster
+```
+
+**3. Relanzar solo ese job:**
+```bash
+# Borrar archivos viejos (opcional)
+rm results/logs/ensemble_N128_*.{SUCCESS,FAILED,log}
+rm -rf results/data/ensemble_N_sweep_N128/
+
+# Relanzar
+qsub jobs/ensemble_N128.pbs
+```
+
+---
+
 ## 🛠️ Troubleshooting
 
 ### ❌ "No se generan los jobs"
