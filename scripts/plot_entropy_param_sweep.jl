@@ -52,25 +52,6 @@ function compute_entropy_smooth(modal_E::Matrix; delta::Float64=SMOOTH_DELTA)
     entropy_from_smooth(smooth_modal_energies(modal_E, delta))
 end
 
-function compute_xi_from_energies(modal_E::Matrix; delta::Float64=SMOOTH_DELTA)
-    E_smooth = smooth_modal_energies(modal_E, delta)
-    N = size(E_smooth, 1)
-    sum_all = vec(sum(E_smooth, dims=1))
-    mid = div(N, 2)
-
-    if mid >= N
-        sum_upper = zeros(length(sum_all))
-        S_upper = zeros(length(sum_all))
-    else
-        E_upper = E_smooth[mid+1:end, :]
-        sum_upper = vec(sum(E_upper, dims=1))
-        w_k = E_upper ./ (sum_upper .+ EPS)'
-        w_k .= max.(w_k, 1e-12)
-        S_upper = -vec(sum(w_k .* log.(w_k), dims=1))
-    end
-
-    @. (2 * sum_upper / (sum_all .+ EPS)) * exp(S_upper) / N
-end
 
 function load_modal_results(path::String)
     isfile(path) || error("File not found: $path")
@@ -131,10 +112,9 @@ function label_for_delta(config, delta)
     end
 end
 
-function plot_entropy_xi_for_param(param_val, runs, config, delta_smooth, outdir_entropy, outdir_xi)
+function plot_entropy_for_param(param_val, runs, config, delta_smooth, outdir_entropy)
     println("  Parameter $(config.nonlinear)=$param_val:")
     p_S = build_base_plot(L"$\bar{S}(t)$")
-    p_xi = build_base_plot(L"$\xi(t)$")
 
     for (j, run) in enumerate(runs)
         if isempty(run.times)
@@ -143,22 +123,16 @@ function plot_entropy_xi_for_param(param_val, runs, config, delta_smooth, outdir
         end
 
         S = compute_entropy_smooth(run.modal_E; delta = delta_smooth)
-        xi = compute_xi_from_energies(run.modal_E; delta = delta_smooth)
         style = LINESTYLES[mod1(j, length(LINESTYLES))]
         label_str = label_for_delta(config, run.delta)
 
         plot!(p_S, run.times, S, label = label_str, lw = 2.0, linestyle = style, alpha = 0.8)
-        plot!(p_xi, run.times, xi, label = label_str, lw = 2.0, linestyle = style, alpha = 0.8)
         println("    ✓ Δ=$(run.delta) ($(length(run.times)) points)")
     end
 
     fname_S = joinpath(outdir_entropy, "entropy_$(config.nonlinear)_p$(param_val)_$(config.boundary).pdf")
     savefig(p_S, fname_S)
-    println("Saved: $fname_S")
-
-    fname_xi = joinpath(outdir_xi, "xi_$(config.nonlinear)_p$(param_val)_$(config.boundary).pdf")
-    savefig(p_xi, fname_xi)
-    println("Saved: $fname_xi\n")
+    println("Saved: $fname_S\n")
 end
 
 function main()
@@ -169,22 +143,20 @@ function main()
     pcfg = build_plot_config(ARGS[1])
     apply_global_plot_style!()
     mkpath(pcfg.outdir_entropy)
-    mkpath(pcfg.outdir_xi)
 
     results, config = load_modal_results(pcfg.input_file)
     results = filter_results(results, pcfg.filter_params, pcfg.filter_deltas)
     grouped = group_results_by_param(results)
 
-    println("Processing entropy and localization parameter ξ with moving average...\n")
+    println("Processing entropy with moving average...\n")
 
     for param_val in sort(collect(keys(grouped)))
-        plot_entropy_xi_for_param(param_val, grouped[param_val], config,
-            pcfg.smooth_delta, pcfg.outdir_entropy, pcfg.outdir_xi)
+        plot_entropy_for_param(param_val, grouped[param_val], config,
+            pcfg.smooth_delta, pcfg.outdir_entropy)
     end
 
-    println("✓ Done. Entropy and ξ plots saved to:")
+    println("✓ Done. Entropy plots saved to:")
     println("  • $(pcfg.outdir_entropy)")
-    println("  • $(pcfg.outdir_xi)")
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__

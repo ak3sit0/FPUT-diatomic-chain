@@ -46,11 +46,11 @@ function main()
         grid=false,
         size=(1000, 600),
         xscale=:log10,
-        framestyle=:box
+        framestyle=:box,
+        margin=5Plots.mm
     )
 
-    # Plotear cada N y recolectar tiempos positivos
-    all_pos = Float64[]
+    # Plotear cada N
     for (i, result) in enumerate(results)
         N = result.N
         t = result.scaled_t
@@ -60,11 +60,14 @@ function main()
         t = Float64.(t)
         S = Float64.(S)
 
-        # Recolectar tiempos positivos para xlims
-        pos = t[t .> 0]
-        if !isempty(pos)
-            append!(all_pos, pos)
+        # Filtrar tiempos positivos antes de plotear (evita warnings en log scale)
+        idx = findall(>(0), t)
+        if isempty(idx)
+            println("Warning: N=$N tiene todos los tiempos ≤ 0, omitiendo")
+            continue
         end
+        t = t[idx]
+        S = S[idx]
 
         # Downsample si hay muchos puntos
         npts = length(t)
@@ -83,13 +86,6 @@ function main()
             linestyle=ls,
             linewidth=2.2,
             label=latexstring("N = $(N)"))
-    end
-
-    # Establecer límites de eje X para evitar warnings de ticks
-    if !isempty(all_pos)
-        xmin = minimum(all_pos)
-        xmax = maximum(all_pos)
-        xlims!(p, xmin, xmax)
     end
 
     # Guardar PDF

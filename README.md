@@ -9,7 +9,6 @@ Análisis numérico de la dinámica de sistemas de Bose mediante simulación de 
 - **`fput_fast_runner.jl`**: Integración numérica con solvers de alta precisión (DifferentialEquations.jl)
 - **`fput_analysis.jl`**: Análisis modal, entropía espectral, velocidades de dispersión
 - **`config.jl`**: Gestión de configuración desde TOML
-- **`fput_visualization.jl`**: Utilidades para visualización
 
 ### Visualization Scripts (`examples/`)
 - `plot_resonance_level_curves.jl` — Curvas de nivel de resonancia ω₋(k₁) + ω₋(k₂) = ω₊(k₃)
@@ -19,7 +18,6 @@ Análisis numérico de la dinámica de sistemas de Bose mediante simulación de 
 - `plot_aao_delta_sweep.jl` — Parrón de barrido en parámetro delta
 - `plot_entropy_N_timeseries.jl` — Evolución de entropía vs. tiempo
 - `plot_thermalization_time.jl` — Análisis de tiempos de termalización
-- `plot_thermalization_halo.jl` — Estructura de haloes de termalización
 - `coupling_coefficients.jl` — Coeficientes de acoplamiento
 
 ### Simulation & Analysis (`scripts/`)
