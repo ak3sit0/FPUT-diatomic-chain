@@ -1,0 +1,26 @@
+[experiment]
+name        = "nsweep_production"
+description = "Barrido N modo 2: alpha=0.1, Dk=0.1, TMAX=1e7"
+
+[physics]
+N_values       = [32, 64, 128, 256]
+boundary       = "periodic"
+system_type    = "springs"
+nonlinear      = "alpha"
+param_values   = [0.1]
+delta_values   = [0.1]
+energy_density = 0.445
+init_type      = "mode"
+n_real         = 1
+seed_base      = 42
+
+[simulation]
+TMAX          = 1e7
+T_block       = 5e5
+DT            = 0.05
+save_every    = 1000
+downsample    = 1
+entropy_delta = 0.6
+
+[output]
+base_dir = "results/data/nsweep_production"
