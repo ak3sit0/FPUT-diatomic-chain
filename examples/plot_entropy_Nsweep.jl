@@ -2,15 +2,18 @@
     plot_entropy_Nsweep.jl
 
 Grafica la evolución de entropía para múltiples N en una sola gráfica.
-Estilo: Plots.jl + gr(), curvas superpuestas, colores y estilos distintos por N.
+Basado en plot_entropy_N_timeseries.jl con estilo profesional.
 
 Usage:
   julia --project=. examples/plot_entropy_Nsweep.jl results/data/nsweep_test/nsweep_results_YYYY-MM-DD.jld2
 """
 
-using JLD2, Plots, LaTeXStrings, Statistics
+using JLD2, Plots, LaTeXStrings, Statistics, Printf
 
 gr()
+
+const PLOT_MAX_POINTS = 2000
+const LINESTYLES = [:solid, :dash, :dot, :dashdot, :dashdotdot]
 
 function apply_recovery_style!()
     default(titlefont=font(16), guidefont=font(14), tickfont=font(11), legendfont=font(12))
@@ -31,24 +34,20 @@ function main()
 
     apply_recovery_style!()
 
-    # Colores y estilos por N
-    palette = [:darkblue, :darkred, :darkgreen, :darkorange]
-    linestyles = [:solid, :dash, :dot, :dashdot]
-    markers = [:circle, :square, :diamond, :pentagon]
+    # Paleta de colores
+    palette = [:darkblue, :darkred, :darkgreen, :darkorange, :purple]
 
-    # Crear gráfica
+    # Crear gráfica sin datos iniciales
     p = plot(
-        xlabel=latexstring("t \\; (\\mathrm{cycles})"),
-        ylabel=latexstring("S(t)"),
+        xlabel=L"t \; (\mathrm{cycles})",
+        ylabel=L"S(t)",
         title="Spectral entropy vs time for different N",
-        legend=:bottomright,
         lw=2.5,
+        legend=:bottomright,
         grid=true,
-        size=(1000, 700),
+        size=(1000, 600),
         xscale=:log10,
-        framestyle=:box,
-        bottom_margin=5Plots.mm,
-        left_margin=5Plots.mm
+        framestyle=:box
     )
 
     # Plotear cada N
@@ -57,42 +56,38 @@ function main()
         t = result.scaled_t
         S = result.entropy
 
+        # Convertir a Float64 por si acaso
+        t = Float64.(t)
+        S = Float64.(S)
+
         # Downsample si hay muchos puntos
         npts = length(t)
-        if npts > 2000
-            step = max(1, Int(floor(npts / 2000)))
+        if npts > PLOT_MAX_POINTS
+            step = max(1, Int(floor(npts / PLOT_MAX_POINTS)))
             idx = 1:step:npts
             t = t[idx]
             S = S[idx]
         end
 
         color = palette[mod1(i, length(palette))]
-        ls = linestyles[mod1(i, length(linestyles))]
-        marker = markers[mod1(i, length(markers))]
+        ls = LINESTYLES[mod1(i, length(LINESTYLES))]
 
         plot!(p, t, S;
             color=color,
             linestyle=ls,
-            marker=marker,
-            markersize=4,
-            markerstrokewidth=0,
-            lw=2.5,
-            label=latexstring("N = $(N)"),
-            legend=:bottomright)
+            linewidth=2.2,
+            label=latexstring("N = $(N)"))
     end
 
-    # Línea horizontal en log(N) para referencia
-    N_values = [r.N for r in results]
-    if !isempty(N_values)
-        S_max = maximum(N_values) |> log
-        hline!(p, [S_max], line=(:dash, :gray, 1.5), label=latexstring("\\log N_{\\max}"))
-    end
-
-    # Guardar
+    # Guardar PDF
     outdir = "results/figures/nsweep"
     mkpath(outdir)
     savefig(p, joinpath(outdir, "entropy_Nsweep.pdf"))
     println("Saved: $(outdir)/entropy_Nsweep.pdf")
+
+    # PNG para preview
+    savefig(p, joinpath(outdir, "entropy_Nsweep.png"))
+    println("Saved: $(outdir)/entropy_Nsweep.png")
 
     # Tabla de resumen
     println("\n=== Entropy Summary ===")
@@ -103,7 +98,7 @@ function main()
         S_init = result.entropy[1]
         S_final = result.entropy[end]
         ΔS = S_final - S_init
-        println("$(N)\t$(round(S_init; digits=3))\t$(round(S_final; digits=3))\t$(round(ΔS; digits=3))")
+        @printf "%d\t%.3f\t%.3f\t%.3f\n" N S_init S_final ΔS
     end
 end
 
