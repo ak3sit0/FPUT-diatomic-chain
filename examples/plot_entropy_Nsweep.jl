@@ -35,19 +35,18 @@ function main()
     apply_recovery_style!()
 
     # Paleta de colores
-    palette = [:darkblue, :darkred, :darkgreen, :darkorange, :purple]
+    palette = [:blue, :red, :green, :orange, :purple, :brown, :magenta]
 
-    # Crear gráfica sin datos iniciales
+    # Crear gráfica
     p = plot(
-        xlabel="Time (cycles)",
-        ylabel="Entropy",
+        xlabel=L"t \quad (\mathrm{cycles})",
+        ylabel=L"S(t)",
         lw=2.5,
         legend=:bottomright,
-        grid=true,
-        size=(1100, 700),
+        grid=false,
+        size=(1000, 600),
         xscale=:log10,
-        framestyle=:box,
-        margin=10Plots.mm
+        framestyle=:box
     )
 
     # Plotear cada N
