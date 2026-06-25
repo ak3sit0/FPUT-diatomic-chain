@@ -39,15 +39,15 @@ function main()
 
     # Crear gráfica sin datos iniciales
     p = plot(
-        xlabel=L"t \; (\mathrm{cycles})",
-        ylabel=L"S(t)",
-        title="Spectral entropy vs time for different N",
+        xlabel="Time (cycles)",
+        ylabel="Entropy",
         lw=2.5,
         legend=:bottomright,
         grid=true,
-        size=(1000, 600),
+        size=(1100, 700),
         xscale=:log10,
-        framestyle=:box
+        framestyle=:box,
+        margin=10Plots.mm
     )
 
     # Plotear cada N

@@ -15,10 +15,10 @@ n_real         = 1
 seed_base      = 42
 
 [simulation]
-TMAX          = 1e4
-T_block       = 5e3
+TMAX          = 1e5
+T_block       = 5e4
 DT            = 0.05
-save_every    = 100
+save_every    = 500
 downsample    = 1
 entropy_delta = 0.6
 debug         = true
