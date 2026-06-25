@@ -16,7 +16,7 @@ const PLOT_MAX_POINTS = 2000
 const LINESTYLES = [:solid, :dash, :dot, :dashdot, :dashdotdot]
 
 function apply_recovery_style!()
-    default(titlefont=font(16), guidefont=font(14), tickfont=font(11), legendfont=font(12))
+    default(titlefont=font(16), guidefont=font(12), tickfont=font(11), legendfont=font(12))
 end
 
 function main()
@@ -49,7 +49,8 @@ function main()
         framestyle=:box
     )
 
-    # Plotear cada N
+    # Plotear cada N y recolectar tiempos positivos
+    all_pos = Float64[]
     for (i, result) in enumerate(results)
         N = result.N
         t = result.scaled_t
@@ -58,6 +59,12 @@ function main()
         # Convertir a Float64 por si acaso
         t = Float64.(t)
         S = Float64.(S)
+
+        # Recolectar tiempos positivos para xlims
+        pos = t[t .> 0]
+        if !isempty(pos)
+            append!(all_pos, pos)
+        end
 
         # Downsample si hay muchos puntos
         npts = length(t)
@@ -76,6 +83,13 @@ function main()
             linestyle=ls,
             linewidth=2.2,
             label=latexstring("N = $(N)"))
+    end
+
+    # Establecer límites de eje X para evitar warnings de ticks
+    if !isempty(all_pos)
+        xmin = minimum(all_pos)
+        xmax = maximum(all_pos)
+        xlims!(p, xmin, xmax)
     end
 
     # Guardar PDF
