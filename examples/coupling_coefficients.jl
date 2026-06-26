@@ -42,9 +42,9 @@ function compute_gamma(kA, kB, alfa; Nk=601, Ngrid=201)
     wrap = k -> mod(k + π, 2π) - π
     kplot = collect(range(-π, π, length=Ngrid))
 
-    # branch index: 1=acoustic(a), 2=optical(o)
+    # branch index: 1=acoustic(-), 2=optical(+)
     # nameIdx = (s1-1)*4 + (s2-1)*2 + (s3-1) + 1
-    names = ["aaa","aao","aoa","oaa","aoo","oao","ooa","ooo"]
+    names = ["---","--+","-+-","+--","-++","+-+","++-","+++"]
     Gamma = [zeros(ComplexF64, Ngrid, Ngrid) for _ in 1:8]
 
     for i1 in 1:Ngrid
@@ -95,7 +95,8 @@ function plot_gamma(kA, kB, alfa; Nk=601, Ngrid=201)
                   title=latexstring("\\left|\\Gamma_{$(names[n])}(k_1,k_2)\\right|"),
                   xlabelsize=26, ylabelsize=26, titlesize=32)
         last_hm = heatmap!(ax, kplot, kplot, abs.(Gamma[n]),
-                      colorrange=(0, maxabs), colormap=:Blues)
+                      colorrange=(0, maxabs), colormap=:Blues,
+                      rasterize=4)
     end
 
     # Barra de color compartida
@@ -113,4 +114,4 @@ function plot_gamma(kA, kB, alfa; Nk=601, Ngrid=201)
 end
 
 # Ejecución
-plot_gamma(1.2, 0.8, 0.2)
+plot_gamma(1.3, 0.7, 0.1)

@@ -4,7 +4,7 @@ include(joinpath(@__DIR__, "plot_gamma_with_resonance.jl"))
 
 function plot_aao_delta_sweep(delta_values, alfa; Nk=601, Ngrid=201)
     kplot = collect(range(-π, π, length=Ngrid)) # Range of values of k to plot
-    aao_idx = 2  # "aao" is the second index 
+    aao_idx = 2  # "--+" is the second index
 
     # Pre-calcular todos los |Γ_aao|
     aao_data = map(delta_values) do delta
@@ -28,10 +28,11 @@ function plot_aao_delta_sweep(delta_values, alfa; Nk=601, Ngrid=201)
         ax = Axis(fig[row, col],
                   xlabel=L"k_1", ylabel=L"k_2",
                   title=latexstring("\\Delta\\kappa = $(delta)"),
-                  xlabelsize=23, ylabelsize=23, titlesize=26)
+                  xlabelsize=27, ylabelsize=27, titlesize=30)
 
         last_hm = heatmap!(ax, kplot, kplot, Gaao;
-                           colorrange=(0, global_max), colormap=:Blues)
+                           colorrange=(0, global_max), colormap=:Blues,
+                           rasterize=4)
 
         # Curva de resonancia aao: s1=1(a), s2=1(a), s3=2(o)
         D = resonance_matrix(kplot, kA, kB, 1, 1, 2)
@@ -40,18 +41,18 @@ function plot_aao_delta_sweep(delta_values, alfa; Nk=601, Ngrid=201)
 
     # Barra de color compartida
     Colorbar(fig[1:2, 4], last_hm;
-             label=L"|\Gamma_{aao}(k_1,k_2)|", width=35, labelsize=36)
+             label=L"|\Gamma_{--+}(k_1,k_2)|", width=35, labelsize=40)
 
     # Supertítulo
     Label(fig[0, :],
-          latexstring("\\left|\\Gamma_{aao}(k_1,k_2)\\right|,\\quad k_3=-k_1-k_2,\\quad \\alpha=$(alfa)"),
-          fontsize=30)
+          latexstring("\\left|\\Gamma_{--+}(k_1,k_2)\\right|,\\quad k_3=-k_1-k_2,\\quad \\alpha=$(alfa)"),
+          fontsize=34)
 
     mkpath("results/figures/coupling")
-    save("results/figures/coupling/Gamma_aao_delta_sweep.png", fig)
+    save("results/figures/coupling/Gamma_aao_delta_sweep.pdf", fig)
     return fig
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    plot_aao_delta_sweep([0.1, 0.2, 0.3, 0.4, 0.5], 0.1)
+    plot_aao_delta_sweep([0.05, 0.1, 0.2, 0.3, 0.4, 0.5], 0.1)
 end

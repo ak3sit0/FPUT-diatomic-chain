@@ -153,6 +153,7 @@ function render_heatmap_panel!(ax, panel::PanelData, cfg)
         colormap = cgrad([:white, "#B2D9FF", "#5999F2", "#3359CC", "#0D4CB3"]),
         colorscale = cfg.color_scale == :log ? log10 : identity,
         colorrange = cfg.color_scale == :log ? (cfg.clamp_min, cfg.clamp_max) : (0.0, cfg.clamp_max),
+        rasterize = 4,
     )
     xlims!(ax, panel.t_vals[1], panel.t_vals[end])
     ylims!(ax, first(panel.mode_range) - 0.5, last(panel.mode_range) + 0.5)
@@ -167,7 +168,7 @@ function add_labels_and_colorbar!(fig, ga, hm_ref, cfg)
 
     if cfg.color_scale == :log
         Colorbar(fig[1, 2], hm_ref;
-            label = "Energy (log10)",
+            label = "Log10(Energy)",
             labelsize = cfg.labelsize,
             labelfont = cfg.font,
             ticklabelsize = cfg.ticksize,
