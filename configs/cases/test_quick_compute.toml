@@ -1,0 +1,25 @@
+[experiment]
+name = "test_quick_compute"
+description = "Quick test for compute_trajectories.jl — 2 params × 2 deltas, TMAX=1e4"
+
+[physics]
+N = 32
+boundary = "fixed"
+system_type = "springs"
+nonlinear = "alpha"
+param_values = [0.1, 0.2]
+delta_values = [0.05, 0.1]
+initial_condition = "mode"
+init_mode = 1
+initial_energy = 0.45
+
+[simulation]
+TMAX = 1e4
+T_block = 5e3
+DT = 0.05
+save_every = 100
+downsample = 2
+debug = true
+
+[output]
+base_dir = "results/data/test_quick"

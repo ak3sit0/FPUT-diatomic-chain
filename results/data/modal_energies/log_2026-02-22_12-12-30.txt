@@ -1,6 +1,0 @@
-STARTING: 1 sims | TMAX=10.0 | Block=5.0
-[1] ↻ Initializing/Resuming 1 (p=0.1, d=0.01)
-[1] ✓ i=1 t=5.0 | Mem: 0.0MB | E_mean: 0.00667
-[1] ✓ i=1 t=10.0 | Mem: 0.0MB | E_mean: 0.00666
-[1]  DONE: p=0.1, d=0.01
-COMPLETED. Saved 1/1 to results/data/modal_energies/modal_energies_springs_alpha_periodic_2026-02-22.jld2

@@ -33,6 +33,28 @@ function compute_residual(k1_vals, k2_vals, delta)
     end
 end
 
+function add_klapp_umklapp_regions!(p; xmin=-π, xmax=π)
+    tri_topright = Shape([0.0, π, π], [π, π, 0.0])
+    tri_botleft  = Shape([0.0, -π, -π], [-π, -π, 0.0])
+
+    plot!(p, tri_topright; fillcolor=:firebrick, fillalpha=0.10,
+          linealpha=0, label="")
+    plot!(p, tri_botleft;  fillcolor=:firebrick, fillalpha=0.10,
+          linealpha=0, label="")
+
+    # Frontera k1+k2 = ±π
+    plot!(p, [0.0, π], [π, 0.0]; color=:gray40, linestyle=:dash,
+          linewidth=1, alpha=0.7, label="")
+    plot!(p, [0.0, -π], [-π, 0.0]; color=:gray40, linestyle=:dash,
+          linewidth=1, alpha=0.7, label="")
+
+    annotate!(p, (-2.95, -2.35, text("Umklapp\n" * L"|k_1+k_2|>\pi", 9,
+              :firebrick, :left)))
+    annotate!(p, (-1.15, 2.35, text("Klapp (normal)\n" * L"|k_1+k_2|<\pi", 9,
+              :navy, :left)))
+    return p
+end
+
 
 function plot_resonance!(p, N, delta;
                          label=nothing, col=:red, ls=:solid,
@@ -59,6 +81,7 @@ function plot_resonance!(p, N, delta;
              xlim        = (xmin, xmax),
              ylim        = (xmin, xmax),
              grid        = true,
+             framestyle = :origin,
              colorbar    = false,
              guidefont   = font(guidefs),
              tickfont    = font(tickfs),
@@ -73,7 +96,10 @@ function plot_multiple_resonance(N, delta_values;
     p = plot(legend=:topright,
              guidefont  = font(guidefs),
              tickfont   = font(tickfs),
-             legendfont = font(legendfs))
+             legendfont = font(legendfs),
+             framestyle = :origin)
+
+    add_klapp_umklapp_regions!(p)   # ← NUEVA línea, antes del loop
 
     for (i, delta) in enumerate(delta_values)
         col = colors[mod1(i, length(colors))]
@@ -98,8 +124,10 @@ function plot_multiple_resonance(N, delta_values;
     return p
 end
 
+
+
 if abspath(PROGRAM_FILE) == @__FILE__
-    p = plot_multiple_resonance(256, [0.1, 0.3, 0.4, 0.49])
+    p = plot_multiple_resonance(256, [0.05, 0.1, 0.3, 0.49])
     mkpath("results/figures/resonance_level_curves")
-    savefig(p, "results/figures/resonance_level_curves/level_sets_resonance.png")
+    savefig(p, "results/figures/resonance_level_curves/level_sets_resonance.pdf")
 end

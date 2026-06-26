@@ -148,7 +148,7 @@ function main()
     pairs = collect(Iterators.product(cfg.param_values, cfg.delta_values))
     results = Vector{Any}(undef, length(pairs))
 
-    Threads.@threads for i in 1:length(pairs)
+    Threads.@threads for i in eachindex(pairs)
         pval, delta = pairs[i]
         results[i] = try
             run_case(i, pval, delta, cfg)

@@ -1,7 +1,0 @@
-modal energies - parameters
-initial_condition = second_excited_mode
-springs 
-alpha = 0.1 
-boundary_conditions = periodic
-delta_k_values = 0.1, 0.33, 0.4, 0.5, 0.6
-
