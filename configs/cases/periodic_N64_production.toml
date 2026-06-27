@@ -8,14 +8,14 @@ boundary = "periodic"
 system_type = "springs"
 nonlinear = "alpha"
 param_values = [0.1]
-delta_values = [0.05, 0.1, 0.2, 0.3]
+delta_values = [0.05, 0.1, 0.5]
 initial_condition = "mode"
 init_mode = 2
 initial_energy = 0.445 # initial_density of energy = 0.445/64
 
 [simulation]
-TMAX = 1e7
-T_block = 1e5
+TMAX = 5e6
+T_block = 1e6
 DT = 0.05
 # save_every = 200000 # keeps ~1000 saved points: TMAX/(DT*save_every) ≈ 1000
 save_every = 1000

@@ -1,4 +1,4 @@
-using Plots, LaTeXStrings
+using Plots, LaTeXStrings, Colors
 
 # Dispersión — forma compacta ec. (9) del paper
 # κ* = 1 - Δκ², válido para cualquier convención A/B
@@ -37,16 +37,16 @@ function add_klapp_umklapp_regions!(p; xmin=-π, xmax=π)
     tri_topright = Shape([0.0, π, π], [π, π, 0.0])
     tri_botleft  = Shape([0.0, -π, -π], [-π, -π, 0.0])
 
-    plot!(p, tri_topright; fillcolor=:firebrick, fillalpha=0.10,
+    plot!(p, tri_topright; fillcolor=RGB(0.961, 0.773, 0.094), fillalpha=0.18,
           linealpha=0, label="")
-    plot!(p, tri_botleft;  fillcolor=:firebrick, fillalpha=0.10,
+    plot!(p, tri_botleft;  fillcolor=RGB(0.961, 0.773, 0.094), fillalpha=0.18,
           linealpha=0, label="")
 
     # Frontera k1+k2 = ±π
-    plot!(p, [0.0, π], [π, 0.0]; color=:gray40, linestyle=:dash,
-          linewidth=1, alpha=0.7, label="")
-    plot!(p, [0.0, -π], [-π, 0.0]; color=:gray40, linestyle=:dash,
-          linewidth=1, alpha=0.7, label="")
+    plot!(p, [0.0, π], [π, 0.0]; color=RGB(0.753, 0.439, 0.0), linestyle=:dash,
+          linewidth=2.5, alpha=0.90, label="")
+    plot!(p, [0.0, -π], [-π, 0.0]; color=RGB(0.753, 0.439, 0.0), linestyle=:dash,
+          linewidth=2.5, alpha=0.90, label="")
 
     annotate!(p, (-2.95, -2.35, text("Umklapp\n" * L"|k_1+k_2|>\pi", 9,
               :firebrick, :left)))

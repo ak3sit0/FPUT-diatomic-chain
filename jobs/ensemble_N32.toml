@@ -6,22 +6,23 @@ branch = "acoustic"
 seed_base = 42
 N = 32
 nonlinear = "alpha"
-delta_values = [0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
+delta_values = [0.1, 0.2, 0.3]
 energy_density = 0.445
-n_real = 50
+n_real = 5
 init_type = "band_ensemble"
 
 [output]
-base_dir = "results/data/ensemble_N_sweep_N32"
+base_dir = "results/data/ensemble_N_sweep_test_N32"
 
 [experiment]
-name = "ensemble_N_sweep"
-description = "Barrido multi-N del ensamble de fases: Δκ completo, n_real=50"
+name = "ensemble_N_sweep_test"
+description = "Test rápido: N=[32,64], fases aleatorias, n_real=5, delta barrido corto"
 
 [simulation]
 downsample = 1
 save_every = 100
 entropy_delta = 0.6
-T_block = 50000.0
+T_block = 10000.0
 DT = 0.05
-TMAX = 1.0e6
+TMAX = 100000.0
+debug = true

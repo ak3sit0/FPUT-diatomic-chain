@@ -160,38 +160,27 @@ function plot_scattering_rate(delta_values, R_vals; outdir="results/figures/scat
 
     i_max = argmax(R_norm)
     Δκ_opt = delta_values[i_max]
-    R_half_max = 0.5
 
     # Convertir Δκ a η = (1 - Δκ)/(1 + Δκ)
     eta_values = @. (1 - delta_values) / (1 + delta_values)
     eta_opt = (1 - Δκ_opt) / (1 + Δκ_opt)
 
+    eta_max = (1 - 0.05) / (1 + 0.05)   # η corresponding to Δκ = 0.05
+
     fig = Figure(size=(1100, 650))
     ax  = Axis(fig[1, 1],
-               xlabel=L"\eta = \frac{1-\Delta\kappa}{1+\Delta\kappa}",
+               #xlabel=L"\eta = \frac{1-\Delta\kappa}{1+\Delta\kappa}",
+               xlabel=L"\eta",  # = 1-\Delta\kappa) / 1+\Delta\kappa  ",
                ylabel=L"R(\eta) / R_\mathrm{max}",
                title=L"Effective acoustic-optical scattering rate $R(\eta)$",
-               xlabelsize=25, ylabelsize=25, titlesize=28,
-               xticklabelsize=18, yticklabelsize=18)
+               xlabelsize=29, ylabelsize=29, titlesize=32,
+               xticklabelsize=22, yticklabelsize=22)
 
     # Agregar grid sutil
     hlines!(ax, [0.0, 0.25, 0.5, 0.75, 1.0], color=:gray, alpha=0.2, linewidth=0.5)
     vlines!(ax, collect(0.0:0.1:1.0), color=:gray, alpha=0.2, linewidth=0.5)
 
-    # Establecer límites del eje x
-    xlims!(ax, 0.30, 0.95)
-
-    # Zona resonante: sombrear donde R > 0.5×R_max (azul claro)
-    resonant_mask = R_norm .>= R_half_max
-    if any(resonant_mask)
-        for i in 1:(length(eta_values)-1)
-            if resonant_mask[i] || resonant_mask[i+1]
-                η_start = eta_values[i]
-                η_end = eta_values[i+1]
-                band!(ax, [η_start, η_end], [0, 0], [1.0, 1.0], color=(:steelblue, 0.2))
-            end
-        end
-    end
+    xlims!(ax, 0.0, eta_max)
 
     # Curva principal (azul oscuro)
     lines!(ax, eta_values, R_norm, linewidth=3.5, color=:darkblue, label=L"R(\eta)")
@@ -207,7 +196,7 @@ function plot_scattering_rate(delta_values, R_vals; outdir="results/figures/scat
     axislegend(ax, position=:lt, fontsize=16, framevisible=true,
                backgroundcolor=(:white, 0.8), labelsize=24)
 
-    save(joinpath(outdir, "scattering_rate_vs_delta.png"), fig)
+    save(joinpath(outdir, "scattering_rate_vs_eta.pdf"), fig)
     return fig
 end
 

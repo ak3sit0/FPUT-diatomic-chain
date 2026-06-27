@@ -1,0 +1,28 @@
+[experiment]
+name        = "ensemble_N_sweep_test"
+description = "Test rápido: N=[32,64], fases aleatorias, n_real=5, delta barrido corto"
+
+[physics]
+N_values       = [32, 64]
+boundary       = "periodic"
+system_type    = "springs"
+nonlinear      = "alpha"
+param_values   = [0.1]
+delta_values   = [0.1, 0.2, 0.3]
+energy_density = 0.445
+init_type      = "band_ensemble"
+branch         = "acoustic"
+n_real         = 5
+seed_base      = 42
+
+[simulation]
+TMAX          = 1e5
+T_block       = 1e4
+DT            = 0.05
+save_every    = 100
+downsample    = 1
+entropy_delta = 0.6
+debug         = true
+
+[output]
+base_dir = "results/data/ensemble_N_sweep_test"
