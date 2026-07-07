@@ -20,7 +20,7 @@ description = "Barrido multi-N del ensamble de fases: Δκ completo, n_real=50"
 
 [simulation]
 downsample = 1
-save_every = 100
+save_every = 768
 entropy_delta = 0.6
 T_block = 50000.0
 DT = 0.05

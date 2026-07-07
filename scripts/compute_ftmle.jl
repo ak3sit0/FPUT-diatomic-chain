@@ -1,22 +1,15 @@
 """
     compute_ftmle.jl
 
-Calcula el exponente de Lyapunov de tiempo finito (ftMLE) vía el método de
-dos trayectorias de Benettin et al. para el caso con meseta de entropía
-prolongada (sticky state): N=64, α=0.1, Δκ=0.1, PBC, modo-2 inicial.
-
-El loop de renormalización es fundamental: sin él, la separación crece como
-e^{λt} y desborda numéricamente. En cada intervalo T_renorm se mide la
-separación, se acumula log(d/δ₀), y se renormaliza la trayectoria perturbada
-de vuelta a distancia δ₀. λ(t) = (1/t) Σ log(d/δ₀) converge al MLE.
+Calcula el ftMLE vía el método de dos trayectorias de Benettin et al.
+Soporta múltiples Δκ en paralelo (Threads.@threads).
 
 Usage:
-  julia --project=. scripts/compute_ftmle.jl [config.toml] [T_max] [delta_target]
+  julia -t <N> --project=. scripts/compute_ftmle.jl [config.toml] [T_max] [T_renorm] [delta1,delta2,...]
 
-Defaults:
-  config.toml   = configs/cases/periodic_N64_production.toml
-  T_max         = 80000  (physical time units; ~2× t_escape de la meseta)
-  delta_target  = 0.1    (Δκ del caso pegajoso)
+  delta1,delta2,...  lista separada por comas; si se omite usa todos los delta_values del TOML
+  T_max              tiempo físico máximo (default 1e7)
+  T_renorm           intervalo de renormalización (default 200.0)
 """
 
 using TOML, JLD2, LinearAlgebra, Random, Dates
@@ -93,11 +86,11 @@ function run_ftmle(cfg, delta_k;
     q_ref, v_ref, freq, V, m, sp = mode_ic(N, delta_k, alpha, boundary, mode_idx, E)
 
     # Perturbación aleatoria normalizada en espacio de fase 2N
-    rng = MersenneTwister(rng_seed)
-    dv  = randn(rng, 2N)
-    dv ./= norm(dv)
-    q_per = q_ref .+ delta0 .* dv[1:N]
-    v_per = v_ref .+ delta0 .* dv[N+1:end]
+    rng = MersenneTwister(rng_seed) # Semilla fija para reproducibilidad de números aleatorios
+    dv  = randn(rng, 2N) # Perturbación aleatoria normalizada en espacio de fase 2N
+    dv ./= norm(dv) # Normalizar a 1
+    q_per = q_ref .+ delta0 .* dv[1:N] # Perturbación inicial en q
+    v_per = v_ref .+ delta0 .* dv[N+1:end] # Perturbación inicial en v
 
     n_chunks   = Int(ceil(T_max / T_renorm))
     t_vec      = Vector{Float64}(undef, n_chunks)
@@ -148,38 +141,54 @@ end
 
 # ── Main ────────────────────────────────────────────────────────────────────
 
-function main()
-    toml_path    = get(ARGS, 1, "configs/cases/periodic_N64_production.toml")
-    T_max        = parse(Float64, get(ARGS, 2, "5000000"))   # ~77700 ciclos para ω₂≈0.0976
-    delta_target = parse(Float64, get(ARGS, 3, "0.1"))
-    T_renorm     = parse(Float64, get(ARGS, 4, "200.0"))     # 200 físico ≈ 3.1 ciclos
-
-    isfile(toml_path) || error("Config not found: $toml_path")
-    cfg = read_config(toml_path)
-
-    # Verificar que el delta pedido existe en el config
-    idx = findfirst(d -> isapprox(d, delta_target; atol=1e-12), cfg.delta_values)
-    idx === nothing && error("delta_target=$delta_target no está en cfg.delta_values=$(cfg.delta_values)")
-    delta_k = cfg.delta_values[idx]
-
-    t_vec, lambda_vec, omega_ref = run_ftmle(cfg, delta_k; T_max=T_max, T_renorm=T_renorm)
-
-    # Convertir a ciclos (mismas unidades que scaled_t en los datos de entropía)
+function save_result(cfg, toml_path, delta_k, T_max, t_vec, lambda_vec, omega_ref)
     t_cycles = t_vec .* omega_ref ./ (2π)
-
-    outdir  = cfg.base_dir
+    outdir   = joinpath(cfg.base_dir, "ftmle")
     mkpath(outdir)
-    outpath = joinpath(outdir, "ftmle_delta$(replace(string(delta_target), "." => "p"))_$(Dates.today()).jld2")
+    bc_tag  = string(cfg.boundary)
+    tag     = replace(string(delta_k), "." => "p")
+    outpath = joinpath(outdir, "ftmle_$(bc_tag)_delta$(tag)_$(Dates.today()).jld2")
     jldsave(outpath;
         t_physical  = t_vec,
         t_cycles    = t_cycles,
         lambda      = lambda_vec,
         omega_ref   = omega_ref,
         delta_k     = delta_k,
+        boundary    = string(cfg.boundary),
+        init_mode   = cfg.init_mode,
         T_max       = T_max,
         config_path = toml_path,
     )
     println("Guardado: $outpath")
+end
+
+function main()
+    toml_path = get(ARGS, 1, "configs/cases/periodic_N64_production.toml")
+    T_max     = parse(Float64, get(ARGS, 2, "10000000.0"))
+    T_renorm  = parse(Float64, get(ARGS, 3, "200.0"))
+
+    isfile(toml_path) || error("Config not found: $toml_path")
+    cfg = read_config(toml_path)
+
+    # Arg 4: lista de deltas separada por comas, o todos los del TOML
+    deltas = if length(ARGS) >= 4
+        requested = parse.(Float64, split(ARGS[4], ","))
+        for d in requested
+            any(x -> isapprox(x, d; atol=1e-12), cfg.delta_values) ||
+                error("delta=$d no está en cfg.delta_values=$(cfg.delta_values)")
+        end
+        requested
+    else
+        cfg.delta_values
+    end
+
+    println("Casos a calcular: Δκ = $deltas  ($(Threads.nthreads()) thread(s))")
+    flush(stdout)
+
+    Threads.@threads for delta_k in deltas
+        t_vec, lambda_vec, omega_ref = run_ftmle(cfg, delta_k; T_max=T_max, T_renorm=T_renorm)
+        save_result(cfg, toml_path, delta_k, T_max, t_vec, lambda_vec, omega_ref)
+    end
 end
 
 main()

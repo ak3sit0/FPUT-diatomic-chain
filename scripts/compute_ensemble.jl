@@ -213,6 +213,44 @@ function run_single_realization(sp, q0, v0, freq, V, m, target_mode_idx, k_ac, k
     return (scaled_t=T_total, modal_E=modal_E, entropy=entropy, E_acoustic=E_ac, E_optical=E_opt)
 end
 
+# ── Tiempo de termalización (Opción A: umbral por realización) ────────────────
+
+"""
+    compute_T_therm(entropy_realizations, scaled_t, k_band, N) -> NamedTuple
+
+Estima T_therm por realización via umbral en la entropía normalizada,
+luego calcula estadísticas del ensamble. Umbral f = 1 - 1/e (tiempo de escala
+natural: equivale al tiempo de relajación para crecimiento exponencial puro).
+
+S0 = log(|k_band|)  entropía inicial teórica (banda uniforme)
+Seq = log(N)         equipartición total
+"""
+function compute_T_therm(entropy_realizations, scaled_t, k_band, N)
+    f  = 1 - 1/ℯ
+    S0  = log(length(k_band))
+    Seq = log(N)
+    ΔS  = Seq - S0
+
+    T_vec = map(entropy_realizations) do S_r
+        nt     = min(length(S_r), length(scaled_t))
+        S_norm = (S_r[1:nt] .- S0) ./ ΔS
+        idx    = findfirst(S_norm .> f)
+        isnothing(idx) ? Inf : scaled_t[idx]
+    end
+
+    finitos = filter(isfinite, T_vec)
+    n_fin   = length(finitos)
+    return (
+        T_therm_mean   = isempty(finitos) ? Inf : mean(finitos),
+        T_therm_std    = (n_fin > 1)      ? std(finitos) : NaN,
+        T_therm_median = isempty(finitos) ? Inf : median(finitos),
+        T_therm_vec    = T_vec,
+        frac_therm     = n_fin / length(T_vec),
+        n_therm        = n_fin,
+        threshold_f    = f,
+    )
+end
+
 # ── Un caso completo (ensamble) ───────────────────────────────────────────────
 
 function run_ensemble_case(case_idx, pval, delta, cfg)
@@ -320,7 +358,11 @@ function run_ensemble_case(case_idx, pval, delta, cfg)
     entropy_mean = vec(mean(ent_mat, dims=1))
     entropy_std  = vec(std(ent_mat,  dims=1))
 
-    println("[case $case_idx] Finalizado. S̄=$(round(entropy_mean[end];digits=4)) ± $(round(entropy_std[end];digits=4))")
+    ttherm = compute_T_therm(entropy_realizations, T_ref, k_band, cfg.N)
+
+    println("[case $case_idx] Finalizado. S̄=$(round(entropy_mean[end];digits=4)) ± $(round(entropy_std[end];digits=4))  " *
+            "T_therm=$(round(ttherm.T_therm_mean; sigdigits=3)) ± $(round(ttherm.T_therm_std; sigdigits=2))  " *
+            "frac_therm=$(ttherm.n_therm)/$(n_real)")
 
     return (
         param                  = pval,
@@ -332,7 +374,13 @@ function run_ensemble_case(case_idx, pval, delta, cfg)
         E_acoustic_mean        = E_ac_mean_accum,
         E_optical_mean         = E_opt_mean_accum,
         entropy_realizations   = entropy_realizations,
-        E_optical_realizations = E_optical_realizations,  # nueva: per-realización
+        E_optical_realizations = E_optical_realizations,
+        T_therm_mean           = ttherm.T_therm_mean,
+        T_therm_std            = ttherm.T_therm_std,
+        T_therm_median         = ttherm.T_therm_median,
+        T_therm_vec            = ttherm.T_therm_vec,
+        frac_therm             = ttherm.frac_therm,
+        n_therm                = ttherm.n_therm,
         n_real                 = n_real,
         seed_base              = cfg.seed_base,
         branch                 = cfg.branch,

@@ -1,16 +1,18 @@
 """
     plot_ftmle.jl
 
-Figura de tres paneles con eje x compartido (log10, en ciclos):
-  - Superior:  S̄(t) del backup de entropía
-  - Medio:     λ(t) (ftMLE) + referencia c·ln(t)/t  (log-log)
-  - Inferior:  R(t) = λ(t) / [c·ln(t)/t]             (semi-log)
+Figura de un panel: λ(t) en escala log-log + ley de potencias ajustada t^{-δ}.
+El ajuste se hace sobre el 50% central de la curva del caso Δκ=0.1 (representativo).
+
+Soporta uno o varios archivos JLD2 de ftMLE superpuestos.
+Cada caso recibe un color y estilo de línea distintos.
 
 Usage:
-  julia --project=. scripts/plot_ftmle.jl <ftmle.jld2> [entropy.jld2]
+  julia --project=. scripts/plot_ftmle.jl <ftmle1.jld2> [ftmle2.jld2 ...]
 """
 
-using JLD2, Plots, LaTeXStrings, Statistics
+using JLD2, Plots, LaTeXStrings, Statistics, Dates
+import Plots: mm, RGB
 
 function apply_global_plot_style!()
     default(titlefont = font(16), guidefont = font(14),
@@ -25,127 +27,122 @@ function downsample(v, n_max)
     return v[idx], idx
 end
 
-function fit_c(t_cyc, lam)
-    n  = length(t_cyc)
-    lo = n ÷ 4
-    hi = 3 * n ÷ 4
-    mean(lam[lo:hi] .* t_cyc[lo:hi] ./ log.(t_cyc[lo:hi]))
+"""
+    fit_powerlaw(t, lam; t_max, n_bins) -> (c, δ)
+
+Binning logarítmico + regresión lineal en log-log.
+Divide [t[1], t_max] en n_bins bins de igual ancho en log(t),
+promedia λ dentro de cada bin, y ajusta sobre las medias de bin.
+Cada década pesa igual independientemente de la densidad de puntos.
+"""
+function fit_powerlaw(t, lam; t_max=1e4, n_bins=20)
+    mask = (t .<= t_max) .& (t .> 0) .& (lam .> 0)
+    t_m  = t[mask]
+    l_m  = lam[mask]
+    isempty(t_m) && error("Sin datos en el rango de ajuste")
+
+    edges = exp10.(range(log10(t_m[1]), log10(t_max); length=n_bins+1))
+    t_bin = Float64[]; l_bin = Float64[]
+    for i in 1:n_bins
+        idx = findall(s -> edges[i] <= s < edges[i+1], t_m)
+        isempty(idx) && continue
+        push!(t_bin, exp(mean(log.(t_m[idx]))))   # media geométrica del bin
+        push!(l_bin, exp(mean(log.(l_m[idx]))))   # media geométrica de λ
+    end
+
+    x  = log.(t_bin); y = log.(l_bin)
+    mx = mean(x);     my = mean(y)
+    slope     = sum((x .- mx) .* (y .- my)) / sum((x .- mx).^2)
+    intercept = my - slope * mx
+    return exp(intercept), -slope
 end
+
+# Paleta de azules con contraste: oscuro → medio → teal → violeta-azul → cian
+const PALETTE = [
+    RGB(0.20, 0.60, 0.86),   # azul claro vivo
+    RGB(0.13, 0.47, 0.71),   # azul medio
+    RGB(0.10, 0.65, 0.76),   # azul teal
+    RGB(0.35, 0.22, 0.65),   # azul-violeta
+    RGB(0.05, 0.50, 0.50),   # teal oscuro
+]
+const LINESTYLES = [:dot, :dash, :dashdot, :dashdotdot, :solid]
+
+const DELTA_REF = 0.05   # caso del que se toma la referencia
 
 function main()
     if isempty(ARGS)
-        println("Usage: julia scripts/plot_ftmle.jl <ftmle.jld2> [entropy.jld2]")
+        println("Usage: julia scripts/plot_ftmle.jl <ftmle1.jld2> [ftmle2.jld2 ...]")
         return
     end
 
-    ftmle_path = ARGS[1]
-    ent_path   = get(ARGS, 2,
-        "results/data/backups/backup_data/periodic/entropy_data_springs_alpha_low_periodic.jld2")
-
-    # ── Cargar ftMLE ────────────────────────────────────────────────────────
-    d_f     = load(ftmle_path)
-    t_cyc   = Float64.(d_f["t_cycles"])
-    lam     = Float64.(d_f["lambda"])
-    delta_k = Float64(d_f["delta_k"])
-
-    valid  = findall(x -> x > 0 && isfinite(x), lam)
-    t_lam  = t_cyc[valid]
-    l_lam  = lam[valid]
-
-    # ── Cargar entropía ─────────────────────────────────────────────────────
-    d_e       = load(ent_path)
-    ent_entry = nothing
-    for r in d_e["results"]
-        _, dval, _, _ = r
-        isapprox(dval, delta_k; atol=1e-10) && (ent_entry = r; break)
-    end
-    ent_entry === nothing && error("No entry with Δκ=$delta_k in $ent_path")
-    _, _, t_ent_raw, S_ent_raw = ent_entry
-
-    # Limitar entropía al rango temporal del ftMLE, excluir t=0
-    t_lo  = max(t_lam[1], 1.0)
-    t_hi  = t_lam[end]
-    mask  = findall(t -> t >= t_lo && t <= t_hi, t_ent_raw)
-    t_ent = t_ent_raw[mask]
-    S_ent = S_ent_raw[mask]
-
-    # ── Referencia c·ln(t)/t ────────────────────────────────────────────────
-    c_fit = fit_c(t_lam, l_lam)
-    t_ref = exp10.(range(log10(t_lo), log10(t_hi); length=400))
-    l_ref = c_fit .* log.(t_ref) ./ t_ref
-
-    # ── R(t) = λ(t) / [c·ln(t)/t] evaluado en los mismos puntos que λ ───────
-    l_ref_at_lam = c_fit .* log.(t_lam) ./ t_lam
-    R             = l_lam ./ l_ref_at_lam
-
-    # ── Downsample ───────────────────────────────────────────────────────────
-    t_ent_ds, idx_e = downsample(t_ent, 3000)
-    S_ent_ds        = S_ent[idx_e]
-    t_lam_ds, idx_l = downsample(t_lam, 3000)
-    l_lam_ds        = l_lam[idx_l]
-    R_ds            = R[idx_l]
-
+    ftmle_paths = ARGS[:]
     apply_global_plot_style!()
 
-    # ── Panel 1: S̄(t) ───────────────────────────────────────────────────────
-    p1 = plot(t_ent_ds, S_ent_ds;
-        xscale     = :log10,
-        xlabel     = "",
-        ylabel     = L"$\bar{S}(t)$",
-        label      = latexstring("\\Delta\\kappa = $delta_k"),
-        legend     = :topleft,
-        framestyle = :box,
-        grid       = false,
-        lw         = 2.0,
-        color      = :navy,
-        title      = latexstring("\\Delta\\kappa=$(delta_k),\\ \\alpha=0.1,\\ N=64,\\ \\mathrm{PBC}"),
-    )
+    fig = plot(; xscale=:log10, yscale=:log10,
+                 ylabel     = L"\lambda(t)",
+                 xlabel     = L"t\ \mathrm{(cycles)}",
+                 legend     = :topright,
+                 framestyle = :box,
+                 grid       = true,
+                 gridalpha  = 0.2,
+                 gridstyle  = :dot,
+                 left_margin   = 5mm,
+                 right_margin  = 4mm,
+                 top_margin    = 4mm,
+                 bottom_margin = 6mm,
+                 size          = (800, 500))
 
-    # ── Panel 2: λ(t) log-log ───────────────────────────────────────────────
-    p2 = plot(t_lam_ds, l_lam_ds;
-        xscale     = :log10,
-        yscale     = :log10,
-        xlabel     = "",
-        ylabel     = L"\lambda(t)",
-        label      = L"\lambda(t)",
-        legend     = :topright,
-        framestyle = :box,
-        grid       = false,
-        lw         = 2.0,
-        color      = :crimson,
-    )
-    plot!(p2, t_ref, l_ref;
-        color     = :gray,
-        linestyle = :dash,
-        lw        = 1.5,
-        label     = L"c \cdot \ln(t)/t",
-    )
+    ref_c  = nothing
+    ref_δ  = nothing
+    ref_t0 = nothing
+    ref_t1 = nothing
 
-    # ── Panel 3: R(t) = λ(t) / [c·ln(t)/t], semi-log ───────────────────────
-    p3 = plot(t_lam_ds, R_ds;
-        xscale     = :log10,
-        xlabel     = L"t\ \mathrm{(cycles)}",
-        ylabel     = L"R(t)",
-        label      = false,
-        framestyle = :box,
-        grid       = false,
-        lw         = 2.0,
-        color      = :darkgreen,
-    )
-    hline!(p3, [1.0];
-        color     = :gray,
-        linestyle = :dash,
-        lw        = 1.0,
-        label     = false,
-    )
+    for (k, ftmle_path) in enumerate(ftmle_paths)
+        color = PALETTE[mod1(k, length(PALETTE))]
+        ls    = LINESTYLES[mod1(k, length(LINESTYLES))]
 
-    fig = plot(p1, p2, p3; layout=(3,1), size=(800, 950))
+        d_f     = load(ftmle_path)
+        t_cyc   = Float64.(d_f["t_cycles"])
+        lam     = Float64.(d_f["lambda"])
+        delta_k = Float64(d_f["delta_k"])
 
-    outbase = replace(ftmle_path, ".jld2" => "_fig")
+        valid = findall(x -> x > 0 && isfinite(x), lam)
+        t_lam = t_cyc[valid]
+        l_lam = lam[valid]
+
+        if isapprox(delta_k, DELTA_REF; atol=1e-10)
+            ref_c, ref_δ = fit_powerlaw(t_lam, l_lam)
+            ref_t0 = t_lam[1]
+            ref_t1 = t_lam[end]
+        end
+
+        lw = isapprox(delta_k, DELTA_REF; atol=1e-10) ? 3.5 : 1.5
+        t_lam_ds, idx_l = downsample(t_lam, 3000)
+        plot!(fig, t_lam_ds, l_lam[idx_l];
+            lw=lw, color=color, linestyle=ls,
+            label=latexstring("\\Delta\\kappa = $(delta_k)"))
+    end
+
+    # ── Referencia c·t^{-δ} sobre la segunda mitad ──────────────────────────
+    if !isnothing(ref_c)
+        t_ref   = exp10.(range(log10(ref_t0), log10(ref_t1); length=400))
+        δ_str   = string(round(ref_δ; digits=3))
+        plot!(fig, t_ref, ref_c .* t_ref .^ (-ref_δ);
+            color=:black, linestyle=:solid, lw=2.0,
+            label=latexstring("c\\,t^{-$(δ_str)}"))
+        println("Ajuste (Δκ=$(DELTA_REF)):  c = $(round(ref_c; sigdigits=3))   δ = $(round(ref_δ; digits=4))")
+    end
+
+    figdir = "results/figures/liapunov_exponent"
+    mkpath(figdir)
+    # Detectar boundary: usar el campo del JLD2 si existe, si no asumir "periodic"
+    bc_tags = unique([get(load(p), "boundary", "periodic") for p in ftmle_paths])
+    bc_str  = length(bc_tags) == 1 ? bc_tags[1] : "mixed"
+    tag     = join(replace.(string.(sort(unique(
+                  [Float64(load(p)["delta_k"]) for p in ftmle_paths]))), "." => "p"), "_")
+    outbase = joinpath(figdir, "ftmle_$(bc_str)_delta$(tag)_$(today())")
     savefig(fig, outbase * ".pdf")
     println("PDF: $(outbase).pdf")
-    savefig(fig, outbase * ".png")
-    println("PNG: $(outbase).png")
 end
 
 main()

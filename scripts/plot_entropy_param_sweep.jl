@@ -10,6 +10,7 @@ Usage:
 """
 
 using Plots, JLD2, LaTeXStrings
+import Plots: mm
 include("../src/config.jl"); using Main.Config
 include("../src/fput_analysis.jl"); using .FPUTAnalysis
 
@@ -96,12 +97,15 @@ function filter_results(results, filter_params::Vector{Float64}, filter_deltas::
 end
 
 function apply_global_plot_style!()
-    default(titlefont = font(16), guidefont = font(14), tickfont = font(11), legendfont = font(12))
+    default(titlefont = font(16), guidefont = font(18), tickfont = font(13), legendfont = font(13))
 end
 
 function build_base_plot(ylabel::LaTeXString)
+    exp_range = 0:6
     plot(xlabel = L"t", ylabel = ylabel, legend = :bottomright, framestyle = :box,
-         grid = false, xscale = :log10, size = (800, 600))
+         grid = false, xscale = :log10, size = (800, 600),
+         xticks = (10.0 .^ exp_range, [latexstring("10^{$(i)}") for i in exp_range]),
+         left_margin = 6mm, right_margin = 4mm, top_margin = 2mm, bottom_margin = 6mm)
 end
 
 function label_for_delta(config, delta)
