@@ -5,7 +5,7 @@ Barrido en delta_values con ensamble de fases por banda selectiva.
 Hereda el patrón de bloques temporales de compute_trajectories.jl.
 
 Usage:
-  julia --project=. scripts/compute_ensemble.jl configs/cases/ensemble_test_quick.toml
+  julia --project=. scripts/compute_ensemble.jl configs/cases/ensemble_production.toml
 
 Convención de energía:
   Si el TOML tiene `energy_density`, E_total = N * energy_density  (nueva).
@@ -35,16 +35,26 @@ function derive_band_indices(branch::String, N::Int, freq::Vector{Float64},
     end
 
     if boundary == :periodic
-        # Buscar el mayor salto de frecuencia (band gap), ignorando modo de Goldstone (idx 1)
-        diffs = diff(freq)
-        gap_idx = argmax(diffs[2:end]) + 1   # índice donde ocurre el gap (en freq)
-        if branch == "acoustic"
-            return collect(2:gap_idx)         # excluir modo de traslación (ω≈0)
-        elseif branch == "optical"
-            return collect(gap_idx+1:N)
-        else
-            error("branch debe ser 'acoustic' o 'optical', recibido: '$branch'")
+        isodd(N) && error("La cadena diatómica con PBC exige N par (resortes alternados); N=$N")
+
+        # El gap acústico/óptico está ESTRUCTURALMENTE en N/2: N/2 modos por rama.
+        # NO se detecta con argmax(diff(freq)): a N pequeño y Δκ pequeño el espaciado
+        # intrabanda (~1/N) supera al gap (~Δκ) y argmax cae dentro de la rama acústica.
+        # Medido: N=32 Δκ=0.10 daba gap_idx=3 (banda 2:3 en vez de 2:16); N=64 Δκ=0.05
+        # también fallaba. A partir de N≥128 argmax acierta, pero no hace falta confiar
+        # en él habiendo una respuesta exacta.
+        gap_idx = N ÷ 2
+
+        # El argmax se conserva sólo como diagnóstico.
+        argmax_idx = argmax(diff(freq)[2:end]) + 1
+        if argmax_idx != gap_idx
+            @warn "Gap por argmax ($argmax_idx) ≠ estructural ($gap_idx): el espaciado " *
+                  "intrabanda supera al gap. Se usa el estructural (N/2)." N branch
         end
+
+        branch == "acoustic" && return collect(2:gap_idx)   # excluye traslación (ω≈0)
+        branch == "optical"  && return collect(gap_idx+1:N)
+        error("branch debe ser 'acoustic' o 'optical', recibido: '$branch'")
     else  # :fixed
         branch == "acoustic" && return collect(1:N)
         error("Frontera fija no tiene rama óptica distinguible")
@@ -300,21 +310,33 @@ function run_ensemble_case(case_idx, pval, delta, cfg)
     T_ref                 = nothing
     n_ok                  = 0   # realizaciones estables
 
-    for r in 1:n_real
-        seed = cfg.seed_base + r
+    # Las n_real realizaciones son independientes (sólo leen sp/freq/V/m; cada
+    # solve_fput reserva su propio buffer), así que se lanzan en paralelo. Antes el
+    # bucle era secuencial y el único paralelismo estaba en (param, Δκ) — 9 tareas —,
+    # así que con ppn=16 sobraban 7 cores y pedir un nodo mayor no servía de nada.
+    # Medido: 8 realizaciones a N=256, 11.4 s en serie → 2.2 s en 8 hilos (5.1×, GC 0%).
+    tasks = map(1:n_real) do r
+        Threads.@spawn begin
+            seed = cfg.seed_base + r
 
-        if cfg.init_type == "band_ensemble"
-            q0, v0 = band_phase_ic(k_band, cfg.E_total, cfg.N, freq, V, m, seed)
-        else
-            U         = Diagonal(1.0 ./ sqrt.(m)) * V
-            amplitude = sqrt(2 * cfg.E_total) / freq[target_mode_idx]
-            q0        = amplitude .* U[:, target_mode_idx]
-            v0        = zeros(cfg.N)
+            q0, v0 = if cfg.init_type == "band_ensemble"
+                band_phase_ic(k_band, cfg.E_total, cfg.N, freq, V, m, seed)
+            else
+                U         = Diagonal(1.0 ./ sqrt.(m)) * V
+                amplitude = sqrt(2 * cfg.E_total) / freq[target_mode_idx]
+                (amplitude .* U[:, target_mode_idx], zeros(cfg.N))
+            end
+
+            run_single_realization(sp, q0, v0, freq, V, m,
+                                   target_mode_idx, k_ac, k_opt, cfg,
+                                   "case=$case_idx r=$r/$n_real")
         end
+    end
 
-        label  = "case=$case_idx r=$r/$n_real"
-        result = run_single_realization(sp, q0, v0, freq, V, m,
-                                        target_mode_idx, k_ac, k_opt, cfg, label)
+    # La reducción se hace en serie y en orden de r, para que el resultado NO dependa
+    # del orden en que terminen los hilos (reproducibilidad bit a bit con las semillas).
+    for (r, t) in enumerate(tasks)
+        result = fetch(t)
 
         # Descartar realizaciones inestables
         isnothing(result) && (println("  [r=$r] descartada (inestable)"); continue)
@@ -400,8 +422,12 @@ function main()
     M       = length(pairs)
     results = Vector{Any}(undef, M)
 
-    # Paralelismo sobre (param, delta); el ensamble interno es secuencial
-    @threads for i in 1:M
+    # Los casos van EN SERIE; el paralelismo está ahora dentro, sobre las n_real
+    # realizaciones (ver run_ensemble_case). Anidar @threads aquí con los @spawn de
+    # dentro infrautilizaría los hilos: el bucle externo los tendría bloqueados
+    # esperando. Con n_real ≫ ppn el bucle interno ya satura el nodo por sí solo.
+    println("$(M) casos en serie, $(cfg.n_real) realizaciones en paralelo sobre $(nthreads()) hilos\n")
+    for i in 1:M
         pval, delta = pairs[i]
         results[i]  = try
             run_ensemble_case(i, pval, delta, cfg)

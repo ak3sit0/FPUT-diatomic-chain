@@ -11,7 +11,11 @@ Functional wrapper for the ODE solver.
 """
 function solve_fput(p::SystemParams, q0, v0, tspan, dt; saveat=nothing)
     k, m = make_system(p)
-    p_ode = (k, m, p.alpha, p.beta, p.boundary)
+    # inv_m evita una división por sitio y por evaluación (18 evaluaciones por paso);
+    # F es el buffer de fuerzas por enlace, propio de esta llamada ⇒ seguro entre hilos.
+    inv_m = 1.0 ./ m
+    F     = Vector{Float64}(undef, p.boundary == :fixed ? p.N + 1 : p.N)
+    p_ode = (k, inv_m, p.alpha, p.beta, p.boundary, F)
     
     # DifferentialEquations expects (v0, q0) for SecondOrderODE
     prob = SecondOrderODEProblem(fput_forces!, v0, q0, tspan, p_ode)

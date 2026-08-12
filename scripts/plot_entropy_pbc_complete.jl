@@ -1,14 +1,11 @@
 """
-    plot_entropy_paper.jl
+    plot_entropy_pbc_complete.jl
 
-Figuras de entropía S̄(t) para el paper con codificación de color/grosor
-según instrucciones_figuras_entropia.md.
-
-FBC: 4 curvas (Δκ = 0.05, 0.1, 0.5, 0.7)
-PBC: 5 curvas (Δκ = 0.05, 0.1, 0.2, 0.5, 0.7)
+Figura oficial de entropía S̄(t) para PBC con todos los deltas (0.05-0.9),
+combinando sweep de producción (0.05-0.7) con nueva producción (0.9).
 
 Usage:
-  julia --project=. scripts/plot_entropy_paper.jl <fbc.jld2> <pbc.jld2>
+  julia --project=. scripts/plot_entropy_pbc_complete.jl <pbc_0p05-0p7.jld2> <pbc_delta09.jld2>
 """
 
 using JLD2, Plots, LaTeXStrings, Statistics
@@ -19,19 +16,14 @@ const SMOOTH_DELTA = 0.6
 const EPS          = 1e-18
 
 # ── Spec: (delta, color_hex, linestyle, lw) ──────────────────────────────────
-const SPEC_FBC = [
-    (0.05, "#1a3a6b", :solid,   4.0),
-    (0.1,  "#2171b5", :dash,    2.5),
-    (0.5,  "#d62728", :dashdot, 2.0),
-    (0.7,  "#f4845f", :dot,     1.5),
-]
-
-const SPEC_PBC = [
+const SPEC_PBC_COMPLETE = [
     (0.05, "#1a3a6b", :solid,   4.0),
     (0.1,  "#2171b5", :dash,    2.5),
     (0.2,  "#6baed6", :dot,     2.5),
+    (0.3,  "#b3d9ff", :dashdot, 2.0),
     (0.5,  "#d62728", :dashdot, 2.0),
     (0.7,  "#f4845f", :solid,   1.5),
+    (0.9,  "#8b0000", :dot,     1.5),
 ]
 
 function apply_style!()
@@ -51,13 +43,15 @@ function compute_entropy(modal_E::Matrix)
     -vec(sum(p .* log.(p_safe), dims=1))
 end
 
-function load_results_by_delta(jld2_path)
-    data    = load(jld2_path)
-    results = data["results"]
+function load_results_by_delta_merged(jld2_paths)
     by_delta = Dict{Float64, Any}()
-    for res in results
-        d = Float64(res.Delta)
-        haskey(by_delta, d) || (by_delta[d] = res)
+    for path in jld2_paths
+        data    = load(path)
+        results = data["results"]
+        for res in results
+            d = Float64(res.Delta)
+            haskey(by_delta, d) || (by_delta[d] = res)
+        end
     end
     by_delta
 end
@@ -84,8 +78,8 @@ function logdownsample(t, y, n_max=3000)
     t[idx], y[idx]
 end
 
-function build_fig(jld2_path, spec, bc_label)
-    by_delta = load_results_by_delta(jld2_path)
+function build_fig(jld2_paths, spec, bc_label)
+    by_delta = load_results_by_delta_merged(jld2_paths)
 
     exp_range = 0:6
     fig = plot(;
@@ -121,25 +115,17 @@ end
 
 function main()
     length(ARGS) == 2 || error(
-        "Usage: julia plot_entropy_paper.jl <fbc.jld2> <pbc.jld2>")
-    fbc_path = ARGS[1]
-    pbc_path = ARGS[2]
-    apply_style!()
+        "Usage: julia plot_entropy_pbc_complete.jl <pbc_production.jld2> <pbc_delta09_production.jld2>")
 
+    apply_style!()
     outdir = "results/figures/entropy"
     mkpath(outdir)
 
-    println("\nFBC (", basename(fbc_path), "):")
-    fig_fbc = build_fig(fbc_path, SPEC_FBC, "FBC")
-    savefig(fig_fbc, joinpath(outdir, "fig_entropy_FBC.pdf"))
-    savefig(fig_fbc, joinpath(outdir, "fig_entropy_FBC.png"))
-    println("  → fig_entropy_FBC.pdf/.png")
-
-    println("\nPBC (", basename(pbc_path), "):")
-    fig_pbc = build_fig(pbc_path, SPEC_PBC, "PBC")
-    savefig(fig_pbc, joinpath(outdir, "fig_entropy_PBC.pdf"))
-    savefig(fig_pbc, joinpath(outdir, "fig_entropy_PBC.png"))
-    println("  → fig_entropy_PBC.pdf/.png")
+    println("\nPBC complete (Δκ = 0.05-0.9, all production TMAX=1e7):")
+    fig = build_fig(ARGS, SPEC_PBC_COMPLETE, "PBC-complete")
+    savefig(fig, joinpath(outdir, "fig_entropy_PBC_complete.pdf"))
+    savefig(fig, joinpath(outdir, "fig_entropy_PBC_complete.png"))
+    println("  → fig_entropy_PBC_complete.pdf/.png")
 end
 
 main()

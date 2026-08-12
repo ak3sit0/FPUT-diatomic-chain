@@ -18,8 +18,8 @@ seed_base     = 42
 [simulation]
 TMAX          = 1e6
 T_block       = 5e4
-DT            = 0.05
-save_every    = 100
+DT            = 0.2    # 4.2x vs 0.05; validado en band_ensemble eps=0.445 (ver template)
+save_every    = 100    # pendiente: n_samples, esto crece como N^2 (punto 3)
 downsample    = 1
 entropy_delta = 0.6
 debug         = true

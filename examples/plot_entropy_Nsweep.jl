@@ -2,7 +2,7 @@
     plot_entropy_Nsweep.jl
 
 Grafica la evolución de entropía para múltiples N en una sola gráfica.
-Basado en plot_entropy_N_timeseries.jl con estilo profesional.
+Serie temporal de S(t) superpuesta para varias N, con estilo de publicación.
 
 Usage:
   julia --project=. examples/plot_entropy_Nsweep.jl results/data/nsweep_test/nsweep_results_YYYY-MM-DD.jld2

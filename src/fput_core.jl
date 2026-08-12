@@ -31,37 +31,74 @@ end
 # ── Layer 3: Physics Kernels (Functional style within mutation) ──
 
 """
-    fput_forces!(dv, q, p_ode, t)
-The core Hamiltonian derivative. p_ode = (k, m, alpha, beta, boundary)
+    bond_force(kj, d, alpha, beta) -> F
+
+Fuerza del enlace j con elongación `d`. Del potencial con escalado en k:
+  V_bond = k/2·Δ² + α·k/3·Δ³ + β·k/4·Δ⁴   ⇒   F_bond = k·Δ + α·k·Δ² + β·k·Δ³
+Factorizado como k·Δ·(1 + Δ·(α + β·Δ)) para ahorrar multiplicaciones.
+"""
+@inline bond_force(kj, d, alpha, beta) = kj * d * (1 + d * (alpha + beta * d))
+@inline bond_force_a(kj, d, alpha)     = kj * d * (1 + alpha * d)   # caso β = 0
+
+# Fuerzas por ENLACE (no por sitio): cada enlace se evalúa una sola vez y luego
+# dv[i] = (F_derecha - F_izquierda)·inv_m[i]. La versión anterior calculaba cada
+# enlace dos veces (como f_right de i y como f_left de i+1) y llevaba los
+# condicionales de frontera dentro del bucle, lo que impedía vectorizar.
+
+function _bonds_periodic!(F, q, k, alpha, beta, N)
+    @inbounds if beta == 0.0
+        @simd for i in 1:N-1
+            F[i] = bond_force_a(k[i], q[i+1] - q[i], alpha)
+        end
+        F[N] = bond_force_a(k[N], q[1] - q[N], alpha)
+    else
+        @simd for i in 1:N-1
+            F[i] = bond_force(k[i], q[i+1] - q[i], alpha, beta)
+        end
+        F[N] = bond_force(k[N], q[1] - q[N], alpha, beta)
+    end
+end
+
+function _bonds_fixed!(F, q, k, alpha, beta, N)
+    # Enlace 1: pared–sitio 1 (d = q₁);  enlace N+1: sitio N–pared (d = −q_N)
+    @inbounds if beta == 0.0
+        F[1] = bond_force_a(k[1], q[1], alpha)
+        @simd for j in 2:N
+            F[j] = bond_force_a(k[j], q[j] - q[j-1], alpha)
+        end
+        F[N+1] = bond_force_a(k[N+1], -q[N], alpha)
+    else
+        F[1] = bond_force(k[1], q[1], alpha, beta)
+        @simd for j in 2:N
+            F[j] = bond_force(k[j], q[j] - q[j-1], alpha, beta)
+        end
+        F[N+1] = bond_force(k[N+1], -q[N], alpha, beta)
+    end
+end
+
+"""
+    fput_forces!(dv, v, q, p_ode, t)
+The core Hamiltonian derivative. p_ode = (k, inv_m, alpha, beta, boundary, F)
+`inv_m` = 1 ./ m precalculado; `F` = buffer de fuerzas por enlace (longitud N para
+:periodic, N+1 para :fixed). El buffer es por-llamada a `solve_fput`, así que cada
+hilo tiene el suyo.
 """
 function fput_forces!(dv, v, q, p_ode, t)
-    k, m, alpha, beta, boundary = p_ode
-    N = length(m)
-    
-    if boundary == :fixed
-        # Handle interiors
-        for i in 2:N-1
-            dl, dr = q[i] - q[i-1], q[i+1] - q[i]
-            dv[i] = (k[i+1]*dr - k[i]*dl + alpha*(k[i+1]*dr^2 - k[i]*dl^2) + beta*(k[i+1]*dr^3 - k[i]*dl^3)) / m[i]
-        end
-        # Boundaries
-        dv[1] = (k[2]*(q[2]-q[1]) - k[1]*q[1] + alpha*(k[2]*(q[2]-q[1])^2 - k[1]*q[1]^2) + beta*(k[2]*(q[2]-q[1])^3 - k[1]*q[1]^3)) / m[1]
-        
-        dl_N, dr_N = q[N] - q[N-1], -q[N]
-        dv[N] = (k[N+1]*dr_N - k[N]*dl_N + alpha*(k[N+1]*dr_N^2 - k[N]*dl_N^2) + beta*(k[N+1]*dr_N^3 - k[N]*dl_N^3)) / m[N]
-        
-    elseif boundary == :periodic
-        for i in 1:N
-            idx_prev = (i == 1) ? N : i - 1
-            idx_next = (i == N) ? 1 : i + 1
-            rl, rr = q[i] - q[idx_prev], q[idx_next] - q[i]
+    k, inv_m, alpha, beta, boundary, F = p_ode
+    N = length(inv_m)
 
-            # Forces derived from potential with k-scaling for nonlinear terms:
-            # V_bond = k/2 * Δ^2 + α*k/3 * Δ^3 + β*k/4 * Δ^4
-            # => F_bond = k*Δ + α*k*Δ^2 + β*k*Δ^3
-            f_left  = k[idx_prev]*rl + alpha * k[idx_prev] * rl^2 + beta * k[idx_prev] * rl^3
-            f_right = k[i]*rr + alpha * k[i] * rr^2 + beta * k[i] * rr^3
-            dv[i] = (f_right - f_left) / m[i]
+    if boundary == :periodic
+        _bonds_periodic!(F, q, k, alpha, beta, N)
+        @inbounds begin
+            dv[1] = (F[1] - F[N]) * inv_m[1]
+            @simd for i in 2:N
+                dv[i] = (F[i] - F[i-1]) * inv_m[i]
+            end
+        end
+    elseif boundary == :fixed
+        _bonds_fixed!(F, q, k, alpha, beta, N)
+        @inbounds @simd for i in 1:N
+            dv[i] = (F[i+1] - F[i]) * inv_m[i]
         end
     end
 end

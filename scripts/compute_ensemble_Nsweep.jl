@@ -3,13 +3,13 @@
 
 Barrido sobre múltiples N con parámetros fijos (α, Δκ).
 Un hilo por N, una realización por N (init_type = "mode" o "band_ensemble").
-Salida: un solo JLD2 con todas las N (retrocompatible con plot_entropy_N_timeseries.jl).
+Salida: un solo JLD2 con todas las N (retrocompatible con examples/plot_entropy_Nsweep.jl).
 
 Usage:
   julia --project=. -t 4 scripts/compute_ensemble_Nsweep.jl configs/cases/nsweep_test_quick.toml
 """
 
-using TOML, JLD2, Dates, Base.Threads, Statistics, LinearAlgebra, Random
+using TOML, JLD2, Dates, Base.Threads, Statistics, LinearAlgebra, Random, Printf
 include("../src/fput_core.jl");        using .FPUTCore
 include("../src/fput_fast_runner.jl"); using .FPUTFastRunner
 include("../src/fput_analysis.jl");    using .FPUTAnalysis
@@ -25,15 +25,19 @@ function derive_band_indices(branch::String, N::Int, freq::Vector{Float64},
     end
 
     if boundary == :periodic
-        diffs = diff(freq)
-        gap_idx = argmax(diffs[2:end]) + 1
-        if branch == "acoustic"
-            return collect(2:gap_idx)
-        elseif branch == "optical"
-            return collect(gap_idx+1:N)
-        else
-            error("branch debe ser 'acoustic' u 'optical', recibido: '$branch'")
+        isodd(N) && error("La cadena diatómica con PBC exige N par (resortes alternados); N=$N")
+
+        # Ver la nota extensa en compute_ensemble.jl: el gap está estructuralmente en N/2;
+        # argmax(diff(freq)) falla a N y Δκ pequeños (N=32 Δκ=0.10 → 3 en vez de 16).
+        gap_idx    = N ÷ 2
+        argmax_idx = argmax(diff(freq)[2:end]) + 1
+        if argmax_idx != gap_idx
+            @warn "Gap por argmax ($argmax_idx) ≠ estructural ($gap_idx). Se usa N/2." N branch
         end
+
+        branch == "acoustic" && return collect(2:gap_idx)
+        branch == "optical"  && return collect(gap_idx+1:N)
+        error("branch debe ser 'acoustic' u 'optical', recibido: '$branch'")
     else  # :fixed
         branch == "acoustic" && return collect(1:N)
         error("Frontera fija no tiene rama óptica distinguible")
@@ -79,6 +83,7 @@ function run_single_realization(sp, q0, v0, freq, V, m, target_mode_idx, k_ac, k
     q_cur = copy(q0)
     v_cur = copy(v0)
     T_total        = Float64[]
+    T_abs_total    = Float64[]   # tiempo absoluto (scaled_t es t·ω_ref/2π, no invertible sin ω_ref)
     modal_E_blocks = Vector{Matrix{Float64}}()
     E_ac_blocks    = Vector{Vector{Float64}}()
     E_opt_blocks   = Vector{Vector{Float64}}()
@@ -92,6 +97,7 @@ function run_single_realization(sp, q0, v0, freq, V, m, target_mode_idx, k_ac, k
                                                        (t_cur, t_next), cfg.DT;
                                                        saveat=saveat)
 
+        Tb_abs = Float64.(Tb)
         Tb = Tb .* freq[target_mode_idx] ./ (2π)
 
         Qmat = size(Qb,1) == N ? Float64.(Qb) : Float64.(Qb')
@@ -112,6 +118,7 @@ function run_single_realization(sp, q0, v0, freq, V, m, target_mode_idx, k_ac, k
             if length(Tb) > 1
                 idx_ds = 2:cfg.downsample:length(Tb)
                 append!(T_total, Float64.(Tb[idx_ds]))
+                append!(T_abs_total, Tb_abs[idx_ds])
                 blk = Float64.(modal_Eb[:, idx_ds])
                 size(blk,2) > 0 && push!(modal_E_blocks, blk)
                 push!(E_ac_blocks,  Float64.(E_ac_b[idx_ds]))
@@ -120,6 +127,7 @@ function run_single_realization(sp, q0, v0, freq, V, m, target_mode_idx, k_ac, k
         else
             idx_ds = 1:cfg.downsample:length(Tb)
             append!(T_total, Float64.(Tb[idx_ds]))
+            append!(T_abs_total, Tb_abs[idx_ds])
             blk = Float64.(modal_Eb[:, idx_ds])
             size(blk,2) > 0 && push!(modal_E_blocks, blk)
             push!(E_ac_blocks,  Float64.(E_ac_b[idx_ds]))
@@ -132,11 +140,12 @@ function run_single_realization(sp, q0, v0, freq, V, m, target_mode_idx, k_ac, k
         cfg.debug && println("  $label t=$(round(t_cur; digits=2)) / $(cfg.TMAX)")
     end
 
-    modal_E = isempty(modal_E_blocks) ? zeros(cfg.N, 0) : reduce(hcat, modal_E_blocks)
+    modal_E = isempty(modal_E_blocks) ? zeros(N, 0) : reduce(hcat, modal_E_blocks)
     entropy = FPUTAnalysis.spectral_entropy(modal_E, cfg.entropy_delta)
     E_ac    = isempty(E_ac_blocks)  ? Float64[] : reduce(vcat, E_ac_blocks)
     E_opt   = isempty(E_opt_blocks) ? Float64[] : reduce(vcat, E_opt_blocks)
-    return (scaled_t=T_total, modal_E=modal_E, entropy=entropy, E_acoustic=E_ac, E_optical=E_opt)
+    return (scaled_t=T_total, t_abs=T_abs_total, modal_E=modal_E, entropy=entropy,
+            E_acoustic=E_ac, E_optical=E_opt)
 end
 
 # ── Configuración ──────────────────────────────────────────────────────
@@ -154,14 +163,15 @@ function build_nsweep_config(path::String)
         error("Config debe tener 'N_values' en [physics]")
     end
 
-    E_total = if haskey(phys, "energy_density")
-        Float64(phys["energy_density"]) * first(N_values)  # Usar primer N para calcular energía
-    else
-        Float64(get(phys, "initial_energy", 0.45))
-    end
+    # Convención de energía: `energy_density` fija ε = E_total/N y se resuelve por N dentro
+    # de run_for_N (NO aquí: usar un solo N para todo el barrido rompe el control de ε).
+    # `initial_energy` (legado) fija E_total y por tanto ε varía con N.
+    energy_density = haskey(phys, "energy_density") ? Float64(phys["energy_density"]) : nothing
+    E_total        = Float64(get(phys, "initial_energy", 0.45))
 
     return (
         N_values      = N_values,
+        energy_density = energy_density,
         boundary      = Symbol(phys["boundary"]),
         system_type   = phys["system_type"],
         nonlinear     = Symbol(phys["nonlinear"]),
@@ -174,11 +184,18 @@ function build_nsweep_config(path::String)
         seed_base     = Int(get(phys, "seed_base", 42)),
         k_band_start  = haskey(phys, "k_band_start") ? Int(phys["k_band_start"]) : nothing,
         k_band_end    = haskey(phys, "k_band_end")   ? Int(phys["k_band_end"])   : nothing,
-        TMAX          = Float64(sim["TMAX"]),
-        T_block       = Float64(sim["T_block"]),
+        # Presupuesto temporal. Si `scaled_t_max` está presente, TMAX se deriva por N como
+        # scaled_t_max * 2π/ω_ref (la feature vive a scaled_t fijo => TMAX ∝ N).
+        scaled_t_max  = haskey(sim, "scaled_t_max") ? Float64(sim["scaled_t_max"]) : nothing,
+        TMAX          = Float64(get(sim, "TMAX", 0.0)),
+        T_block       = Float64(get(sim, "T_block", 0.0)),
+        n_blocks      = Int(get(sim, "n_blocks", 20)),
         DT            = Float64(sim["DT"]),
-        save_every    = Int(sim["save_every"]),
-        downsample    = Int(sim["downsample"]),
+        # Si `n_samples` está presente, save_every se deriva por N para que el número de
+        # muestras guardadas sea constante (memoria ∝ N en vez de ∝ N²).
+        n_samples     = haskey(sim, "n_samples") ? Int(sim["n_samples"]) : nothing,
+        save_every    = Int(get(sim, "save_every", 1000)),
+        downsample    = Int(get(sim, "downsample", 1)),
         entropy_delta = Float64(get(sim, "entropy_delta", 0.6)),
         debug         = Bool(get(sim, "debug", false)),
         base_dir      = out["base_dir"],
@@ -192,12 +209,9 @@ function run_for_N(N::Int, pval::Float64, delta::Float64, cfg)
     label = "N=$N p=$pval Δ=$delta"
     println("[$(label)]")
 
-    # Ajustar energía para este N específico
-    E_total = if haskey(cfg, :energy_density)
-        get(cfg, :energy_density, 0.445) * N
-    else
-        cfg.E_total
-    end
+    # Energía para este N. Con `energy_density` se fija ε = E_total/N (control correcto del
+    # barrido); sin ella se hereda E_total y ε ∝ 1/N.
+    E_total = isnothing(cfg.energy_density) ? cfg.E_total : cfg.energy_density * N
 
     sp = FPUTCore.SystemParams(
         N,
@@ -230,6 +244,24 @@ function run_for_N(N::Int, pval::Float64, delta::Float64, cfg)
         k_opt  = collect(div(N, 2)+1:N)
     end
 
+    # ── Presupuesto temporal y muestreo, resueltos por N ──────────────────
+    # scaled_t = t·ω_ref/2π con ω_ref ∝ 1/N, así que alcanzar un scaled_t fijo exige TMAX ∝ N.
+    ω_ref = freq[target_mode_idx]
+    TMAX  = isnothing(cfg.scaled_t_max) ? cfg.TMAX : cfg.scaled_t_max * 2π / ω_ref
+    TMAX > 0 || error("Config debe dar 'TMAX' o 'scaled_t_max' en [simulation]")
+
+    # n_samples fijo ⇒ nt constante en N ⇒ modal_E ∝ N (no ∝ N²).
+    save_every = isnothing(cfg.n_samples) ? cfg.save_every :
+                 max(1, round(Int, TMAX / (cfg.DT * cfg.n_samples)))
+    T_block    = cfg.T_block > 0 ? min(cfg.T_block, TMAX) : TMAX / cfg.n_blocks
+
+    cfg_N = merge(cfg, (N=N, E_total=E_total, TMAX=TMAX,
+                        T_block=T_block, save_every=save_every))
+
+    @printf("  ε=%.4f  TMAX=%.3e  scaled_t_max=%.3e  save_every=%d  nt≈%d\n",
+            E_total/N, TMAX, TMAX*ω_ref/(2π), save_every,
+            round(Int, TMAX/(cfg.DT*save_every)))
+
     # Condición inicial
     if cfg.init_type == "band_ensemble"
         seed = cfg.seed_base + 1
@@ -243,26 +275,36 @@ function run_for_N(N::Int, pval::Float64, delta::Float64, cfg)
 
     # Ejecutar
     result = run_single_realization(sp, q0, v0, freq, V, m,
-                                    target_mode_idx, k_ac, k_opt, cfg, label, N)
+                                    target_mode_idx, k_ac, k_opt, cfg_N, label, N)
 
     if isnothing(result)
         println("  ✗ Fallo")
         return nothing
     end
 
-    println("  ✓ Completado: S_final=$(round(result.entropy[end]; digits=4))")
+    E_opt_frac = isempty(result.E_optical) ? NaN :
+                 result.E_optical[end] / (result.E_acoustic[end] + result.E_optical[end])
+    @printf("  ✓ N=%d  S_final=%.4f  S/logN=%.4f  E_opt/E=%.4f\n",
+            N, result.entropy[end], result.entropy[end]/log(N), E_opt_frac)
 
-    # Retornar entrada compatible con plot_entropy_N_timeseries.jl
+    # Retornar entrada compatible con examples/plot_entropy_Nsweep.jl
     return (
-        N         = N,
-        param     = pval,
-        Delta     = delta,
-        scaled_t  = result.scaled_t,
-        modal_E   = result.modal_E,
-        entropy   = result.entropy,
-        E_total   = E_total,
-        init_type = cfg.init_type,
-        branch    = cfg.branch,
+        N          = N,
+        param      = pval,
+        Delta      = delta,
+        scaled_t   = result.scaled_t,
+        t_abs      = result.t_abs,
+        modal_E    = result.modal_E,
+        entropy    = result.entropy,
+        E_acoustic = result.E_acoustic,
+        E_optical  = result.E_optical,
+        E_total    = E_total,
+        energy_density = E_total / N,
+        omega_ref  = ω_ref,
+        TMAX       = TMAX,
+        save_every = save_every,
+        init_type  = cfg.init_type,
+        branch     = cfg.branch,
     )
 end
 
@@ -273,26 +315,40 @@ function main()
     cfg = build_nsweep_config(ARGS[1])
     mkpath(cfg.base_dir)
 
-    # Parámetros fijos (debe haber solo 1 param y 1 delta)
-    pval  = cfg.param_values[1]
-    delta = cfg.delta_values[1]
+    pval = cfg.param_values[1]
 
     println("=== Nsweep ===")
-    println("Parámetros: α=$pval, Δκ=$delta")
+    println("Parámetros: α=$pval, Δκ=$(cfg.delta_values)")
     println("N_values: $(cfg.N_values)")
     println("init_type: $(cfg.init_type)")
+    if isnothing(cfg.energy_density)
+        println("energía: E_total=$(cfg.E_total) FIJA  ⇒  ε=E/N varía con N (barrido NO controlado en ε)")
+    else
+        println("energía: ε=$(cfg.energy_density) FIJA  ⇒  E_total = ε·N")
+    end
+    println(isnothing(cfg.scaled_t_max) ?
+            "tiempo: TMAX=$(cfg.TMAX) fijo  ⇒  scaled_t alcanzado ∝ 1/N" :
+            "tiempo: scaled_t_max=$(cfg.scaled_t_max) fijo  ⇒  TMAX ∝ N")
+    println(isnothing(cfg.n_samples) ?
+            "muestreo: save_every=$(cfg.save_every) fijo" :
+            "muestreo: n_samples=$(cfg.n_samples) fijo  ⇒  save_every derivado por N")
     println()
 
-    # Paralelismo: 1 hilo por N
-    N_vals = cfg.N_values
-    results = Vector{Any}(undef, length(N_vals))
+    # Paralelismo sobre (N, Δκ). Antes era 1 hilo por N, lo que dejaba el barrido en Δκ
+    # sin usar y limitaba la concurrencia a length(N_values).
+    # :dynamic evita que un solo hilo acumule los N grandes (el coste crece ∝ N·TMAX ∝ N²).
+    pairs   = vec(collect(Iterators.product(cfg.N_values, cfg.delta_values)))
+    sort!(pairs, by = p -> -p[1])          # los más caros primero: mejor balance
+    results = Vector{Any}(undef, length(pairs))
+    println("Casos: $(length(pairs)) = $(length(cfg.N_values)) N × $(length(cfg.delta_values)) Δκ  " *
+            "en $(nthreads()) hilos\n")
 
-    @threads for i in eachindex(N_vals)
-        N = N_vals[i]
+    @threads :dynamic for i in eachindex(pairs)
+        N, delta = pairs[i]
         results[i] = try
             run_for_N(N, pval, delta, cfg)
         catch e
-            println("[N=$N] ERROR: $e\n$(sprint(showerror, e, catch_backtrace()))")
+            println("[N=$N Δ=$delta] ERROR: $e\n$(sprint(showerror, e, catch_backtrace()))")
             nothing
         end
     end
@@ -301,7 +357,7 @@ function main()
 
     outpath = joinpath(cfg.base_dir, "nsweep_results_$(Dates.today()).jld2")
     jldsave(outpath; results=valid, config=ARGS[1])
-    println("\nGuardado: $outpath  ($(length(valid))/$(length(N_vals)) casos válidos)")
+    println("\nGuardado: $outpath  ($(length(valid))/$(length(pairs)) casos válidos)")
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
