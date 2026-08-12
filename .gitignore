@@ -60,3 +60,7 @@ jobs/*.log
 #Markdown files
 GUIA_HPC_MULTI_N.md
 GUIA_NSWEEP_RISE.md
+plan_ensamble_fases.md
+
+#CSV files
+*.csv

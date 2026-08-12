@@ -148,7 +148,7 @@ julia --project=. scripts/plot_entropy_paper.jl <fbc.jld2> <pbc.jld2>
 julia --project=. scripts/plot_entropy_pbc_complete.jl <pbc_0p05-0p7.jld2> <pbc_delta09.jld2>
 ```
 
-### Multi-N HPC workflow
+### Multi-N HPC workflow (PBS/TORQUE)
 
 ```bash
 julia --project=. scripts/generate_hpc_jobs.jl configs/templates/ensemble_N_sweep.toml
@@ -156,7 +156,6 @@ for job in jobs/ensemble_N*.pbs; do qsub $job; done
 julia --project=. scripts/check_hpc_status.jl
 ```
 
-Full details in [GUIA_HPC_MULTI_N.md](GUIA_HPC_MULTI_N.md).
 
 ---
 
