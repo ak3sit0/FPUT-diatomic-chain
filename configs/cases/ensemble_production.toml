@@ -1,0 +1,28 @@
+[experiment]
+name        = "ensemble_production"
+description = "Producción: ensamble de fases, barrido Δκ completo (0.1-0.5), n_real=10"
+
+[physics]
+N             = 64
+boundary      = "periodic"
+system_type   = "springs"
+nonlinear     = "alpha"
+param_values  = [0.1]
+delta_values  = [0.1, 0.12, 0.15, 0.17, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
+energy_density = 0.445
+init_type     = "band_ensemble"
+branch        = "acoustic"
+n_real        = 10
+seed_base     = 42
+
+[simulation]
+TMAX          = 1e6
+T_block       = 5e4
+DT            = 0.2    # 4.2x vs 0.05; validado en band_ensemble eps=0.445 (ver template)
+save_every    = 100    # pendiente: n_samples, esto crece como N^2 (punto 3)
+downsample    = 1
+entropy_delta = 0.6
+debug         = true
+
+[output]
+base_dir = "results/data/ensemble_production_100real"

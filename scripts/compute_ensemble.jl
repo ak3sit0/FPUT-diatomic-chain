@@ -1,0 +1,448 @@
+"""
+    compute_ensemble.jl
+
+Barrido en delta_values con ensamble de fases por banda selectiva.
+Hereda el patrón de bloques temporales de compute_trajectories.jl.
+
+Usage:
+  julia --project=. scripts/compute_ensemble.jl configs/cases/ensemble_production.toml
+
+Convención de energía:
+  Si el TOML tiene `energy_density`, E_total = N * energy_density  (nueva).
+  Si solo tiene `initial_energy`,   E_total = initial_energy        (legado).
+"""
+
+using TOML, JLD2, Dates, Base.Threads, Statistics, LinearAlgebra, Random
+include("../src/fput_core.jl");        using .FPUTCore
+include("../src/fput_fast_runner.jl"); using .FPUTFastRunner
+include("../src/fput_analysis.jl");    using .FPUTAnalysis
+
+# ── Funciones de inicialización ───────────────────────────────────────────────
+
+"""
+    derive_band_indices(branch, N, freq, boundary; k_band_start, k_band_end)
+
+Devuelve Vector{Int} (1-based) de los índices de modo para la rama solicitada.
+`freq` debe estar ordenado en forma ascendente antes de llamar esta función.
+Si k_band_start/k_band_end están presentes, los usa directamente (override manual).
+"""
+function derive_band_indices(branch::String, N::Int, freq::Vector{Float64},
+                              boundary::Symbol;
+                              k_band_start::Union{Int,Nothing}=nothing,
+                              k_band_end::Union{Int,Nothing}=nothing)
+    if !isnothing(k_band_start) && !isnothing(k_band_end)
+        return collect(k_band_start:k_band_end)
+    end
+
+    if boundary == :periodic
+        isodd(N) && error("La cadena diatómica con PBC exige N par (resortes alternados); N=$N")
+
+        # El gap acústico/óptico está ESTRUCTURALMENTE en N/2: N/2 modos por rama.
+        # NO se detecta con argmax(diff(freq)): a N pequeño y Δκ pequeño el espaciado
+        # intrabanda (~1/N) supera al gap (~Δκ) y argmax cae dentro de la rama acústica.
+        # Medido: N=32 Δκ=0.10 daba gap_idx=3 (banda 2:3 en vez de 2:16); N=64 Δκ=0.05
+        # también fallaba. A partir de N≥128 argmax acierta, pero no hace falta confiar
+        # en él habiendo una respuesta exacta.
+        gap_idx = N ÷ 2
+
+        # El argmax se conserva sólo como diagnóstico.
+        argmax_idx = argmax(diff(freq)[2:end]) + 1
+        if argmax_idx != gap_idx
+            @warn "Gap por argmax ($argmax_idx) ≠ estructural ($gap_idx): el espaciado " *
+                  "intrabanda supera al gap. Se usa el estructural (N/2)." N branch
+        end
+
+        branch == "acoustic" && return collect(2:gap_idx)   # excluye traslación (ω≈0)
+        branch == "optical"  && return collect(gap_idx+1:N)
+        error("branch debe ser 'acoustic' o 'optical', recibido: '$branch'")
+    else  # :fixed
+        branch == "acoustic" && return collect(1:N)
+        error("Frontera fija no tiene rama óptica distinguible")
+    end
+end
+
+"""
+    band_phase_ic(k_band, E_total, N, freq, V, m, seed) -> (q0, v0)
+
+Condición inicial de banda selectiva con fases aleatorias uniformes.
+
+Energía E_total distribuida uniformemente sobre los modos en k_band:
+  E_j = E_total / length(k_band)  para j ∈ k_band
+  Q_j =  sqrt(2·E_j) / ω_j · cos(φ_j),  P_j = -sqrt(2·E_j) · sin(φ_j)
+  q = (1/√m) · V · Q,   v = (1/√m) · V · P
+
+Validación post-construcción con @assert (precisión de máquina).
+"""
+function band_phase_ic(k_band::AbstractVector{Int}, E_total::Float64, N::Int,
+                       freq::Vector{Float64}, V::Matrix{Float64},
+                       m::Vector{Float64}, seed::Int)
+    rng    = Random.Xoshiro(seed)
+    E_per  = E_total / length(k_band)
+    Q      = zeros(N)
+    P      = zeros(N)
+
+    for j in k_band
+        freq[j] < 1e-10 && continue   # modo de Goldstone (traslación, ω≈0)
+        φ    = rand(rng) * 2π
+        A    = sqrt(2 * E_per)
+        Q[j] =  A / freq[j] * cos(φ)
+        P[j] = -A            * sin(φ)
+    end
+
+    inv_sqrt_m = 1.0 ./ sqrt.(m)
+    q0 = (V * Q) .* inv_sqrt_m
+    v0 = (V * P) .* inv_sqrt_m
+
+    # Proyectar de vuelta para verificar
+    x        = sqrt.(m) .* q0
+    vx       = sqrt.(m) .* v0
+    Q_check  = V' * x
+    P_check  = V' * vx
+    E_check  = 0.5 .* (P_check.^2 .+ (freq.^2) .* Q_check.^2)
+    E_out    = sum(E_check[setdiff(1:N, k_band)])
+    E_in     = sum(E_check[k_band])
+    tol      = 1e-8 * E_total
+
+    @assert E_out < tol        "Fuga de energía fuera de banda: E_out=$(E_out) (tol=$(tol))"
+    @assert abs(E_in - E_total) < tol "Normalización incorrecta: E_in=$(E_in) vs E_total=$(E_total)"
+
+    return q0, v0
+end
+
+# ── Configuración ─────────────────────────────────────────────────────────────
+
+function build_ensemble_config(path::String)
+    d    = TOML.parsefile(path)
+    phys = d["physics"]
+    sim  = d["simulation"]
+    out  = d["output"]
+
+    N = Int(phys["N"])
+
+    # Convención de energía: energy_density (nueva) tiene prioridad sobre initial_energy (legado)
+    E_total = if haskey(phys, "energy_density")
+        Float64(phys["energy_density"]) * N
+    else
+        Float64(get(phys, "initial_energy", 0.45))
+    end
+
+    return (
+        N             = N,
+        boundary      = Symbol(phys["boundary"]),
+        system_type   = phys["system_type"],
+        nonlinear     = Symbol(phys["nonlinear"]),
+        param_values  = Float64.(phys["param_values"]),
+        delta_values  = Float64.(phys["delta_values"]),
+        E_total       = E_total,
+        init_type     = get(phys, "init_type", "mode"),
+        branch        = get(phys, "branch", "acoustic"),
+        n_real        = Int(get(phys, "n_real", 8)),
+        seed_base     = Int(get(phys, "seed_base", 42)),
+        k_band_start  = haskey(phys, "k_band_start") ? Int(phys["k_band_start"]) : nothing,
+        k_band_end    = haskey(phys, "k_band_end")   ? Int(phys["k_band_end"])   : nothing,
+        TMAX          = Float64(sim["TMAX"]),
+        T_block       = Float64(sim["T_block"]),
+        DT            = Float64(sim["DT"]),
+        save_every    = Int(sim["save_every"]),
+        downsample    = Int(sim["downsample"]),
+        entropy_delta = Float64(get(sim, "entropy_delta", 0.6)),
+        debug         = Bool(get(sim, "debug", false)),
+        base_dir      = out["base_dir"],
+    )
+end
+
+# ── Una realización (integración en bloques) ──────────────────────────────────
+
+# k_ac, k_opt: índices de modos acústicos y ópticos (para diagnóstico interbanda)
+function run_single_realization(sp, q0, v0, freq, V, m, target_mode_idx, k_ac, k_opt, cfg, label)
+    q_cur = copy(q0)
+    v_cur = copy(v0)
+    T_total        = Float64[]
+    modal_E_blocks = Vector{Matrix{Float64}}()
+    E_ac_blocks    = Vector{Vector{Float64}}()   # energía total banda acústica vs t
+    E_opt_blocks   = Vector{Vector{Float64}}()   # energía total banda óptica vs t
+    t_cur          = 0.0
+
+    while t_cur < cfg.TMAX
+        t_next = min(t_cur + cfg.T_block, cfg.TMAX)
+        saveat = t_cur:cfg.save_every*cfg.DT:t_next
+
+        Qb, Vb, Tb, _, _ = FPUTFastRunner.solve_fput(sp, q_cur, v_cur,
+                                                       (t_cur, t_next), cfg.DT;
+                                                       saveat=saveat)
+
+        # Escalar tiempo a ciclos del modo de referencia (misma convención que compute_trajectories)
+        Tb = Tb .* freq[target_mode_idx] ./ (2π)
+
+        # Normalizar forma: garantizar N × nt
+        Qmat = size(Qb,1) == cfg.N ? Float64.(Qb) : Float64.(Qb')
+        Vmat = size(Vb,1) == cfg.N ? Float64.(Vb) : Float64.(Vb')
+
+        modal_Eb = FPUTAnalysis.compute_modal_energies(Qmat, Vmat, freq, V, m)
+
+        # Detección de inestabilidad: la energía total no debe alejarse >100× del valor inicial
+        E_cur = sum(modal_Eb[:, end])
+        if E_cur > 100 * cfg.E_total || isnan(E_cur) || isinf(E_cur)
+            println("  $label INESTABILIDAD detectada (E=$(round(E_cur; sigdigits=3)) >> E_total=$(cfg.E_total)). Abortando.")
+            return nothing
+        end
+
+        # Diagnóstico interbanda: suma de energía por banda en cada instante
+        E_ac_b  = vec(sum(modal_Eb[k_ac,  :], dims=1))
+        E_opt_b = vec(sum(modal_Eb[k_opt, :], dims=1))
+
+        # Append evitando duplicado en frontera de bloque
+        if !isempty(T_total) && !isempty(Tb) && isapprox(T_total[end], Tb[1]; atol=1e-12, rtol=0)
+            if length(Tb) > 1
+                idx_ds = 2:cfg.downsample:length(Tb)
+                append!(T_total, Float64.(Tb[idx_ds]))
+                blk = Float64.(modal_Eb[:, idx_ds])
+                size(blk,2) > 0 && push!(modal_E_blocks, blk)
+                push!(E_ac_blocks,  Float64.(E_ac_b[idx_ds]))
+                push!(E_opt_blocks, Float64.(E_opt_b[idx_ds]))
+            end
+        else
+            idx_ds = 1:cfg.downsample:length(Tb)
+            append!(T_total, Float64.(Tb[idx_ds]))
+            blk = Float64.(modal_Eb[:, idx_ds])
+            size(blk,2) > 0 && push!(modal_E_blocks, blk)
+            push!(E_ac_blocks,  Float64.(E_ac_b[idx_ds]))
+            push!(E_opt_blocks, Float64.(E_opt_b[idx_ds]))
+        end
+
+        q_cur .= Qmat[:, end]
+        v_cur .= Vmat[:, end]
+        t_cur  = t_next
+        cfg.debug && println("  $label t=$(round(t_cur; digits=2)) / $(cfg.TMAX)")
+    end
+
+    modal_E = isempty(modal_E_blocks) ? zeros(cfg.N, 0) : reduce(hcat, modal_E_blocks)
+    entropy = FPUTAnalysis.spectral_entropy(modal_E, cfg.entropy_delta)
+    E_ac    = isempty(E_ac_blocks)  ? Float64[] : reduce(vcat, E_ac_blocks)
+    E_opt   = isempty(E_opt_blocks) ? Float64[] : reduce(vcat, E_opt_blocks)
+    return (scaled_t=T_total, modal_E=modal_E, entropy=entropy, E_acoustic=E_ac, E_optical=E_opt)
+end
+
+# ── Tiempo de termalización (Opción A: umbral por realización) ────────────────
+
+"""
+    compute_T_therm(entropy_realizations, scaled_t, k_band, N) -> NamedTuple
+
+Estima T_therm por realización via umbral en la entropía normalizada,
+luego calcula estadísticas del ensamble. Umbral f = 1 - 1/e (tiempo de escala
+natural: equivale al tiempo de relajación para crecimiento exponencial puro).
+
+S0 = log(|k_band|)  entropía inicial teórica (banda uniforme)
+Seq = log(N)         equipartición total
+"""
+function compute_T_therm(entropy_realizations, scaled_t, k_band, N)
+    f  = 1 - 1/ℯ
+    S0  = log(length(k_band))
+    Seq = log(N)
+    ΔS  = Seq - S0
+
+    T_vec = map(entropy_realizations) do S_r
+        nt     = min(length(S_r), length(scaled_t))
+        S_norm = (S_r[1:nt] .- S0) ./ ΔS
+        idx    = findfirst(S_norm .> f)
+        isnothing(idx) ? Inf : scaled_t[idx]
+    end
+
+    finitos = filter(isfinite, T_vec)
+    n_fin   = length(finitos)
+    return (
+        T_therm_mean   = isempty(finitos) ? Inf : mean(finitos),
+        T_therm_std    = (n_fin > 1)      ? std(finitos) : NaN,
+        T_therm_median = isempty(finitos) ? Inf : median(finitos),
+        T_therm_vec    = T_vec,
+        frac_therm     = n_fin / length(T_vec),
+        n_therm        = n_fin,
+        threshold_f    = f,
+    )
+end
+
+# ── Un caso completo (ensamble) ───────────────────────────────────────────────
+
+function run_ensemble_case(case_idx, pval, delta, cfg)
+    println("[case $case_idx] p=$pval  Δ=$delta  (init=$(cfg.init_type), n_real=$(cfg.n_real))")
+
+    sp = FPUTCore.SystemParams(
+        cfg.N,
+        cfg.system_type == "springs" ? delta : 0.0,
+        cfg.system_type == "masses"  ? delta : 0.0,
+        cfg.nonlinear == :alpha ? pval : 0.0,
+        cfg.nonlinear == :beta  ? pval : 0.0,
+        cfg.boundary
+    )
+
+    k, m    = FPUTCore.make_system(sp)
+    freq, V = FPUTCore.find_normal_modes(k, m, cfg.boundary)
+    idx_s   = sortperm(freq)
+    freq    = freq[idx_s]
+    V       = V[:, idx_s]
+
+    # Selección de banda y modo de referencia para la escala temporal
+    if cfg.init_type == "band_ensemble"
+        k_ac = derive_band_indices(cfg.branch, cfg.N, freq, cfg.boundary;
+                                   k_band_start=cfg.k_band_start,
+                                   k_band_end=cfg.k_band_end)
+        other_branch = cfg.branch == "acoustic" ? "optical" : "acoustic"
+        k_opt        = derive_band_indices(other_branch, cfg.N, freq, cfg.boundary)
+        k_band       = k_ac
+        target_mode_idx = k_ac[1]
+        println("  Banda '$(cfg.branch)': modos $(k_ac[1])..$(k_ac[end]) ($(length(k_ac)) modos)")
+        println("  Banda complementaria: modos $(k_opt[1])..$(k_opt[end]) ($(length(k_opt)) modos)")
+    else  # "mode" — backward compat
+        target_mode_idx = cfg.boundary == :fixed ? 1 : 2
+        k_band = [target_mode_idx]
+        k_ac   = collect(1:div(cfg.N, 2))
+        k_opt  = collect(div(cfg.N, 2)+1:cfg.N)
+    end
+
+    n_real = cfg.n_real
+
+    # Acumuladores
+    entropy_realizations  = Vector{Vector{Float64}}()
+    E_optical_realizations = Vector{Vector{Float64}}()  # nueva: guardar E_opt de cada realización
+    modal_E_mean_accum    = nothing
+    E_ac_mean_accum       = nothing
+    E_opt_mean_accum      = nothing
+    T_ref                 = nothing
+    n_ok                  = 0   # realizaciones estables
+
+    # Las n_real realizaciones son independientes (sólo leen sp/freq/V/m; cada
+    # solve_fput reserva su propio buffer), así que se lanzan en paralelo. Antes el
+    # bucle era secuencial y el único paralelismo estaba en (param, Δκ) — 9 tareas —,
+    # así que con ppn=16 sobraban 7 cores y pedir un nodo mayor no servía de nada.
+    # Medido: 8 realizaciones a N=256, 11.4 s en serie → 2.2 s en 8 hilos (5.1×, GC 0%).
+    tasks = map(1:n_real) do r
+        Threads.@spawn begin
+            seed = cfg.seed_base + r
+
+            q0, v0 = if cfg.init_type == "band_ensemble"
+                band_phase_ic(k_band, cfg.E_total, cfg.N, freq, V, m, seed)
+            else
+                U         = Diagonal(1.0 ./ sqrt.(m)) * V
+                amplitude = sqrt(2 * cfg.E_total) / freq[target_mode_idx]
+                (amplitude .* U[:, target_mode_idx], zeros(cfg.N))
+            end
+
+            run_single_realization(sp, q0, v0, freq, V, m,
+                                   target_mode_idx, k_ac, k_opt, cfg,
+                                   "case=$case_idx r=$r/$n_real")
+        end
+    end
+
+    # La reducción se hace en serie y en orden de r, para que el resultado NO dependa
+    # del orden en que terminen los hilos (reproducibilidad bit a bit con las semillas).
+    for (r, t) in enumerate(tasks)
+        result = fetch(t)
+
+        # Descartar realizaciones inestables
+        isnothing(result) && (println("  [r=$r] descartada (inestable)"); continue)
+
+        n_ok += 1
+        push!(entropy_realizations, result.entropy)
+        push!(E_optical_realizations, result.E_optical)  # nueva línea
+        T_ref = result.scaled_t
+
+        # Acumulación incremental con peso 1/n_real (se renormaliza al final si n_ok < n_real)
+        if isnothing(modal_E_mean_accum)
+            modal_E_mean_accum = copy(result.modal_E)
+            E_ac_mean_accum    = copy(result.E_acoustic)
+            E_opt_mean_accum   = copy(result.E_optical)
+        else
+            nt = min(size(result.modal_E, 2), size(modal_E_mean_accum, 2))
+            modal_E_mean_accum = modal_E_mean_accum[:, 1:nt] .+ result.modal_E[:, 1:nt]
+            E_ac_mean_accum    = E_ac_mean_accum[1:nt]       .+ result.E_acoustic[1:nt]
+            E_opt_mean_accum   = E_opt_mean_accum[1:nt]      .+ result.E_optical[1:nt]
+        end
+
+        println("  [r=$r] S_final=$(round(result.entropy[end]; digits=4))  " *
+                "E_ac=$(round(result.E_acoustic[end]; digits=4))  " *
+                "E_opt=$(round(result.E_optical[end]; digits=4))")
+    end
+
+    if n_ok == 0
+        println("[case $case_idx] Todas las realizaciones inestables. Descartando caso.")
+        return nothing
+    end
+
+    # Normalizar por número de realizaciones estables
+    modal_E_mean_accum ./= n_ok
+    E_ac_mean_accum    ./= n_ok
+    E_opt_mean_accum   ./= n_ok
+    n_ok < n_real && println("  Advertencia: solo $n_ok/$n_real realizaciones estables.")
+
+    # Estadísticas del ensamble sobre realizaciones estables
+    nt_min   = minimum(length(e) for e in entropy_realizations)
+    ent_mat  = reduce(hcat, [e[1:nt_min] for e in entropy_realizations])'
+    entropy_mean = vec(mean(ent_mat, dims=1))
+    entropy_std  = vec(std(ent_mat,  dims=1))
+
+    ttherm = compute_T_therm(entropy_realizations, T_ref, k_band, cfg.N)
+
+    println("[case $case_idx] Finalizado. S̄=$(round(entropy_mean[end];digits=4)) ± $(round(entropy_std[end];digits=4))  " *
+            "T_therm=$(round(ttherm.T_therm_mean; sigdigits=3)) ± $(round(ttherm.T_therm_std; sigdigits=2))  " *
+            "frac_therm=$(ttherm.n_therm)/$(n_real)")
+
+    return (
+        param                  = pval,
+        Delta                  = delta,
+        scaled_t               = T_ref,
+        entropy_mean           = entropy_mean,
+        entropy_std            = entropy_std,
+        modal_E_mean           = modal_E_mean_accum,
+        E_acoustic_mean        = E_ac_mean_accum,
+        E_optical_mean         = E_opt_mean_accum,
+        entropy_realizations   = entropy_realizations,
+        E_optical_realizations = E_optical_realizations,
+        T_therm_mean           = ttherm.T_therm_mean,
+        T_therm_std            = ttherm.T_therm_std,
+        T_therm_median         = ttherm.T_therm_median,
+        T_therm_vec            = ttherm.T_therm_vec,
+        frac_therm             = ttherm.frac_therm,
+        n_therm                = ttherm.n_therm,
+        n_real                 = n_real,
+        seed_base              = cfg.seed_base,
+        branch                 = cfg.branch,
+        k_band                 = collect(k_band),
+        E_total                = cfg.E_total,
+    )
+end
+
+# ── Main ──────────────────────────────────────────────────────────────────────
+
+function main()
+    isempty(ARGS) && error("Usage: julia scripts/compute_ensemble.jl <config.toml>")
+    cfg = build_ensemble_config(ARGS[1])
+    mkpath(cfg.base_dir)
+
+    pairs   = collect(Iterators.product(cfg.param_values, cfg.delta_values))
+    M       = length(pairs)
+    results = Vector{Any}(undef, M)
+
+    # Los casos van EN SERIE; el paralelismo está ahora dentro, sobre las n_real
+    # realizaciones (ver run_ensemble_case). Anidar @threads aquí con los @spawn de
+    # dentro infrautilizaría los hilos: el bucle externo los tendría bloqueados
+    # esperando. Con n_real ≫ ppn el bucle interno ya satura el nodo por sí solo.
+    println("$(M) casos en serie, $(cfg.n_real) realizaciones en paralelo sobre $(nthreads()) hilos\n")
+    for i in 1:M
+        pval, delta = pairs[i]
+        results[i]  = try
+            run_ensemble_case(i, pval, delta, cfg)
+        catch e
+            println("[case $i] ERROR: $e\n$(sprint(showerror, e, catch_backtrace()))")
+            nothing
+        end
+    end
+
+    valid   = filter(!isnothing, results)
+    outpath = joinpath(cfg.base_dir, "ensemble_results_$(Dates.today()).jld2")
+    jldsave(outpath; results=valid, config=ARGS[1])
+    println("Guardado: $outpath  ($(length(valid))/$(M) casos válidos)")
+end
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end

@@ -1,0 +1,25 @@
+[experiment]
+name = "periodic_delta09_production"
+description = "PBC, N=64, α-spring nonlinearity, Delta kappa=0.9 production run (TMAX=1e7)"
+
+[physics]
+N = 64
+boundary = "periodic"
+system_type = "springs"
+nonlinear = "alpha"
+param_values = [0.1]
+delta_values = [0.9]
+initial_condition = "mode"
+init_mode = 2
+initial_energy = 0.445
+
+[simulation]
+TMAX = 1e7
+T_block = 1e6
+DT = 0.05
+save_every = 1000
+downsample = 1
+debug = false
+
+[output]
+base_dir = "results/data"

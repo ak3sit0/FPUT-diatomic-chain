@@ -1,0 +1,36 @@
+[experiment]
+name        = "ensemble_N_sweep"
+description = "Barrido multi-N del ensamble de fases: Δκ completo, n_real=50"
+
+[physics]
+N_values       = [32, 64, 128, 256]
+boundary       = "periodic"
+system_type    = "springs"
+nonlinear      = "alpha"
+param_values   = [0.1]
+delta_values   = [0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
+energy_density = 0.445
+init_type      = "band_ensemble"
+branch         = "acoustic"
+n_real         = 50
+seed_base      = 42
+
+[simulation]
+TMAX          = 1e6
+T_block       = 5e4
+
+# 4.2x más rápido que DT=0.05, validado EN ESTE régimen (band_ensemble, eps=0.445,
+# ensamble de 8 realizaciones): drift relativo de energía 3.4e-10 y la S(t) media
+# difiere 8.7e-3 sobre un rango dinámico de 0.725 (0.13%). w_max=2 exacto para toda
+# N y Delta_kappa, luego w_max*dt = 0.4, muy por debajo del límite de estabilidad.
+DT            = 0.2
+
+# OJO: save_every fijo hace crecer modal_E como N^2 (a N=256 son 200.000 muestras
+# = 410 MB por realizacion, y spectral_entropy hace ~4 copias). Los jobs antiguos
+# lo ponían a mano como 3N. Pendiente de portar aquí el n_samples de nsweep.
+save_every    = 100
+downsample    = 1
+entropy_delta = 0.6
+
+[output]
+base_dir = "results/data/ensemble_N_sweep"
