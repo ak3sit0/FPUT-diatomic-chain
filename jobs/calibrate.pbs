@@ -1,0 +1,56 @@
+#!/bin/bash
+#PBS -N nsweep_calibrate
+#PBS -l nodes=1:ppn=1
+#PBS -l walltime=00:20:00
+#PBS -o results/logs/calibrate_$PBS_JOBID.log
+#PBS -j oe
+
+# Mide la constante de coste DE ESTE NODO y regenera jobs/nsweep_N*.pbs con
+# walltimes correctos. Lanzar ESTO primero; después qsub de los 3 jobs.
+#
+#   qsub jobs/calibrate.pbs
+#   # esperar (~5 min) y revisar results/logs/calibrate_*.log
+#   qsub jobs/nsweep_N64.pbs
+#   qsub jobs/nsweep_N128.pbs
+#   qsub jobs/nsweep_N256.pbs
+#
+# ppn=1 a propósito: la calibración debe medir un core SIN contención de otros
+# hilos, o sale inflada.
+
+cd $PBS_O_WORKDIR
+mkdir -p results/logs
+
+echo "================================"
+echo "calibración de coste  job $PBS_JOBID  on $(hostname)"
+echo "started $(date '+%F %T')"
+echo "================================"
+
+julia --project=. scripts/calibrate_cost.jl 64,128,256
+EXIT=$?
+
+if [ $EXIT -ne 0 ] || [ ! -f results/logs/cost_constant.txt ]; then
+  echo "La calibración falló (exit $EXIT); jobs/*.pbs SIN cambios"
+  exit 1
+fi
+
+C=$(cat results/logs/cost_constant.txt)
+echo
+echo "C = $C ns/paso/sitio  -> regenerando jobs/nsweep_N*.pbs"
+echo
+
+julia --project=. scripts/generate_pbs_nsweep.jl \
+      configs/cases/nsweep_rise_N256.toml --ns-per-step-site=$C
+EXIT=$?
+
+echo
+echo "finished $(date '+%F %T')"
+if [ $EXIT -eq 0 ]; then
+  echo " listo. Walltimes ya ajustados a este clúster:"
+  grep -H walltime jobs/nsweep_N64.pbs jobs/nsweep_N128.pbs jobs/nsweep_N256.pbs
+  echo
+  echo "Ahora:  qsub jobs/nsweep_N64.pbs jobs/nsweep_N128.pbs jobs/nsweep_N256.pbs"
+  echo "Si algún walltime supera el límite de la cola, regenerar con --per-delta."
+else
+  echo "falló la generación (exit $EXIT)"
+fi
+exit $EXIT

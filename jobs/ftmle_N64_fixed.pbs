@@ -1,0 +1,84 @@
+#!/bin/bash
+#PBS -N ftmle_N64_fixed
+#PBS -l nodes=1:ppn=3
+#PBS -l walltime=24:00:00
+#PBS -o results/logs/ftmle_N64_fixed_$PBS_JOBID.log
+#PBS -j oe
+
+set -e
+
+cd $PBS_O_WORKDIR
+mkdir -p results/logs results/data/ftmle results/figures/liapunov_exponent
+LOG=results/logs/ftmle_N64_fixed_$PBS_JOBID.log
+
+{
+  echo "========================================================"
+  echo "ftMLE N=64 fixed BC - Job ID: $PBS_JOBID"
+  echo "Casos: Δκ = 0.05, 0.1, 0.5  |  α=0.1  |  fixed BC  |  modo-1"
+  echo "T_max = 1e7  |  T_renorm = 200"
+  echo "Started at: $(date '+%Y-%m-%d %H:%M:%S')"
+  echo "Hostname:   $(hostname)"
+  echo "Threads:    3 (un caso por thread)"
+  echo "========================================================"
+  echo
+
+  # ── Paso 1: calcular ftMLE para los tres Δκ en paralelo ─────────────────
+  echo "--- Paso 1: compute_ftmle (fixed BC) ---"
+  julia --project=. -t 3 scripts/compute_ftmle.jl \
+    configs/cases/fixed_N64_production.toml \
+    10000000 \
+    200.0
+  COMPUTE_EXIT=$?
+
+  if [ $COMPUTE_EXIT -ne 0 ]; then
+    echo "✗ compute_ftmle falló (exit=$COMPUTE_EXIT)"
+    touch results/logs/ftmle_N64_fixed_$PBS_JOBID.FAILED
+    exit $COMPUTE_EXIT
+  fi
+
+  # Verificar que se generaron los tres archivos
+  TODAY=$(date '+%Y-%m-%d')
+  MISSING=0
+  for DELTA in 0p05 0p1 0p5; do
+    F="results/data/ftmle/ftmle_fixed_delta${DELTA}_${TODAY}.jld2"
+    if [ -f "$F" ]; then
+      echo "  ✓ $F  ($(du -h $F | cut -f1))"
+    else
+      echo "  ✗ No encontrado: $F"
+      MISSING=$((MISSING + 1))
+    fi
+  done
+
+  if [ $MISSING -gt 0 ]; then
+    echo "✗ Faltan $MISSING archivos de ftMLE. Abortando plot."
+    touch results/logs/ftmle_N64_fixed_$PBS_JOBID.FAILED
+    exit 1
+  fi
+
+  # ── Paso 2: graficar ─────────────────────────────────────────────────────
+  echo
+  echo "--- Paso 2: plot_ftmle (fixed BC) ---"
+  julia --project=. scripts/plot_ftmle.jl \
+    results/data/ftmle/ftmle_fixed_delta0p05_${TODAY}.jld2 \
+    results/data/ftmle/ftmle_fixed_delta0p1_${TODAY}.jld2  \
+    results/data/ftmle/ftmle_fixed_delta0p5_${TODAY}.jld2
+
+  PLOT_EXIT=$?
+
+  echo
+  echo "========================================================"
+  if [ $PLOT_EXIT -eq 0 ]; then
+    echo "✓ JOB COMPLETED SUCCESSFULLY"
+    echo "Finished at: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "Figuras en:  results/figures/liapunov_exponent/"
+    ls -lh results/figures/liapunov_exponent/ftmle_delta*${TODAY}* 2>/dev/null || true
+    touch results/logs/ftmle_N64_fixed_$PBS_JOBID.SUCCESS
+  else
+    echo "✗ plot_ftmle falló (exit=$PLOT_EXIT)"
+    touch results/logs/ftmle_N64_fixed_$PBS_JOBID.FAILED
+  fi
+  echo "========================================================"
+
+} 2>&1 | tee -a $LOG
+
+exit $PLOT_EXIT

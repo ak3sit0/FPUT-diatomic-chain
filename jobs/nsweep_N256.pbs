@@ -1,0 +1,37 @@
+#!/bin/bash
+#PBS -N nsweep_N256
+#PBS -l nodes=1:ppn=4
+#PBS -l walltime=10:35:00
+#PBS -o results/logs/nsweep_N256_$PBS_JOBID.log
+#PBS -j oe
+
+cd $PBS_O_WORKDIR
+mkdir -p results/logs "results/data/nsweep_rise_N256"
+
+echo "================================"
+echo "nsweep_N256  job $PBS_JOBID  on $(hostname)"
+echo "deltas: [0.05, 0.1, 0.2, 0.3]   ppn=4   dt=0.2"
+echo "estimado ~4.2 h, walltime 10:35:00"
+echo "started $(date '+%F %T')"
+echo "================================"
+
+julia --project=. -t 4 scripts/compute_ensemble_Nsweep.jl "jobs/nsweep_N256.toml"
+EXIT=$?
+
+# El .jld2 real es la única prueba de éxito: un exit 0 sin fichero es un fallo.
+RESULT=$(find "results/data/nsweep_rise_N256" -name '*.jld2' 2>/dev/null | head -1)
+if [ $EXIT -eq 0 ] && [ -z "$RESULT" ]; then
+  echo "✗ exit 0 pero NO se escribió .jld2"
+  EXIT=1
+fi
+
+echo "finished $(date '+%F %T')"
+if [ $EXIT -eq 0 ]; then
+  echo "✓ OK  -> $RESULT"; ls -lh "$RESULT"
+  touch "results/logs/nsweep_N256_$PBS_JOBID.SUCCESS"
+else
+  echo "✗ FALLO (exit $EXIT)"
+  touch "results/logs/nsweep_N256_$PBS_JOBID.FAILED"
+fi
+exit $EXIT
+
