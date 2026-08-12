@@ -56,3 +56,7 @@ jobs/*.pbs
 jobs/*.log
 *.e*
 *.o*
+
+#Markdown files
+GUIA_HPC_MULTI_N.md
+GUIA_NSWEEP_RISE.md
