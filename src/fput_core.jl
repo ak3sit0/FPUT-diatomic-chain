@@ -126,8 +126,10 @@ function find_normal_modes(k, m, boundary)
             D[i, nxt] = -k[i] / sqrt(m[i] * m[nxt])
         end
     end
-    λ, V = eigen(symmetric(D))
-    return sqrt.(max.(0.0, real.(λ))), V   # max avoids sqrt of negatives from floating-point rounding
+    # Symmetric(D) selects LAPACK's symmetric eigensolver (syevr): faster than the
+    # general dense eigen(), and guarantees real eigenvalues (no real.() needed).
+    λ, V = eigen(Symmetric(D))
+    return sqrt.(max.(0.0, λ)), V   # max avoids sqrt of tiny negative λ from rounding
 end
 
 end # module FPUTCore

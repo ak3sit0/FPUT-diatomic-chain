@@ -24,18 +24,35 @@ end
 # ── Layer 2: Signal Processing (Sliding Averages) ──
 
 """
+    sliding_window_avg!(out, S, E, delta)
+In-place core: `S` is a caller-provided cumsum buffer of length `length(E)+1`,
+reused across calls (e.g. one per mode in `spectral_entropy`) to avoid
+reallocating it every time.
+"""
+function sliding_window_avg!(out::AbstractVector, S::AbstractVector, E::AbstractVector, Δ::Float64)
+    n = length(E)
+    @inbounds begin
+        S[1] = zero(eltype(S))
+        for i in 1:n
+            S[i+1] = S[i] + E[i]
+        end
+        for t in 1:n
+            start_t = max(1, Int(floor(Δ * t)))
+            out[t] = (S[t+1] - S[start_t]) / (t - start_t + 1)
+        end
+    end
+    return out
+end
+
+"""
     sliding_window_avg(series::AbstractVector, delta::Float64)
     computes a moving average where window grows with time (Δ*t).
 """
 function sliding_window_avg(E::AbstractVector{T}, Δ::Float64) where T
     n = length(E)
-    S = pushfirst!(cumsum(E), zero(T)) # cumulative sum with S[1] = 0
+    S = Vector{T}(undef, n + 1)
     avgs = Vector{Float64}(undef, n)
-    for t in 1:n
-        start_t = max(1, Int(floor(Δ * t)))
-        window = t - start_t + 1
-        @inbounds avgs[t] = (S[t+1] - S[start_t]) / window
-    end
+    sliding_window_avg!(avgs, S, E, Δ)
     return avgs
 end
 
@@ -45,9 +62,18 @@ end
     spectral_entropy(energies::Matrix, delta::Float64)
 """
 function spectral_entropy(modal_E::Matrix, delta::Float64)
-    # Apply sliding average to each mode (row)
-    E_avg = stack(sliding_window_avg(row, delta) for row in eachrow(modal_E))'
-    
+    N, nt = size(modal_E)
+    # Apply sliding average to each mode (row). E_avg is built directly in
+    # (N, nt) orientation and S is reused across modes — the previous
+    # stack(sliding_window_avg(row,...) for row in eachrow(modal_E))' allocated
+    # a fresh cumsum buffer per mode plus an intermediate (nt, N) matrix just to
+    # transpose it back.
+    E_avg = Matrix{Float64}(undef, N, nt)
+    S = Vector{Float64}(undef, nt + 1)
+    for i in 1:N
+        sliding_window_avg!(view(E_avg, i, :), S, view(modal_E, i, :), delta)
+    end
+
     # Probabilities p_k = E_k / sum(E)
     total_E = sum(E_avg, dims=1)
     p = E_avg ./ (total_E .+ 1e-15)
