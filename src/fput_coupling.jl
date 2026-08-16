@@ -2,7 +2,7 @@ module FPUTCoupling
 
 using LinearAlgebra
 
-export wrap_pi, compute_eigenvectors, fetch_e, compute_gamma, omega_branch, resonance_matrix
+export wrap_pi, compute_eigenvectors, fetch_e, fetch_e!, compute_gamma, omega_branch, resonance_matrix
 
 # ── Utility: wrap k to [-π, π] ──
 wrap_pi(k::Real) = mod(k + π, 2π) - π
@@ -44,11 +44,23 @@ Linear interpolation of eigenvector E(k) from stored grid.
 Returns 2×2 matrix with columns = [acoustic, optical] branches.
 """
 function fetch_e(k::Real, k_sample::AbstractVector, Estore::Array{ComplexF64,3})
+    E = zeros(ComplexF64, 2, 2)
+    fetch_e!(E, k, k_sample, Estore)
+    return E
+end
+
+"""
+    fetch_e!(E, k, k_sample, Estore)
+
+In-place version of [`fetch_e`](@ref): writes the interpolated 2×2 eigenvector
+matrix into the preallocated `E` buffer. Avoids an allocation per call —
+matters inside `compute_gamma`'s (i1,i2) hot loop.
+"""
+function fetch_e!(E::AbstractMatrix{ComplexF64}, k::Real, k_sample::AbstractVector, Estore::Array{ComplexF64,3})
     k = wrap_pi(k)
     dk   = k_sample[2] - k_sample[1]
     idx  = clamp(searchsortedfirst(k_sample, k) - 1, 1, length(k_sample)-1)
     t    = (k - k_sample[idx]) / dk
-    E    = zeros(ComplexF64, 2, 2)
 
     @inbounds for b in 1:2, c in 1:2
         E[c, b] = (1-t)*Estore[idx, c, b] + t*Estore[idx+1, c, b]
@@ -78,20 +90,27 @@ function compute_gamma(kA::Float64, kB::Float64, alfa::Float64; Nk::Int=601, Ngr
     names = ["aaa","aao","aoa","oaa","aoo","oao","ooa","ooo"]
     Gamma = [zeros(ComplexF64, Ngrid, Ngrid) for _ in 1:8]
 
+    # Note: E1,E2,E3 preallocated outside the (i1,i2) loop and filled via
+    # fetch_e! — eliminates 3 allocations per grid point (Ngrid² total).
+    E1 = zeros(ComplexF64, 2, 2)
+    E2 = zeros(ComplexF64, 2, 2)
+    E3 = zeros(ComplexF64, 2, 2)
+
     @inbounds for i1 in 1:Ngrid
         k1 = kplot[i1]
         for i2 in 1:Ngrid
             k2 = kplot[i2]
             k3 = wrap_pi(-k1 - k2)
 
-            E1 = fetch_e(k1, k_sample, Estore)
-            E2 = fetch_e(k2, k_sample, Estore)
-            E3 = fetch_e(k3, k_sample, Estore)
+            fetch_e!(E1, k1, k_sample, Estore)
+            fetch_e!(E2, k2, k_sample, Estore)
+            fetch_e!(E3, k3, k_sample, Estore)
 
             for s1 in 1:2, s2 in 1:2, s3 in 1:2
-                e1 = E1[:, s1]
-                e2 = E2[:, s2]
-                e3 = E3[:, s3]
+                # Note: @view avoids copying the eigenvector column here
+                e1 = @view E1[:, s1]
+                e2 = @view E2[:, s2]
+                e3 = @view E3[:, s3]
 
                 DA1 = e1[2] - e1[1]
                 DA2 = e2[2] - e2[1]
@@ -103,7 +122,7 @@ function compute_gamma(kA::Float64, kB::Float64, alfa::Float64; Nk::Int=601, Ngr
 
                 val = betaA*(DA1*DA2*DA3) + betaB*(DB1*DB2*DB3)
                 idx = (s1-1)*4 + (s2-1)*2 + (s3-1) + 1
-                Gamma[idx][i2, i1] = val
+                Gamma[idx][i1, i2] = val
             end
         end
     end
@@ -136,8 +155,8 @@ end
     resonance_matrix(kplot, kA, kB, s1, s2, s3) -> D
 
 Residual of resonance condition: ω_s3(k3) - ω_s1(k1) - ω_s2(k2),
-where k3 = -k1-k2. Returns Ngrid × Ngrid matrix with D[j,i] = residual(kplot[i], kplot[j]).
-Note: D[j,i] corresponds to (k1=kplot[i], k2=kplot[j]).
+where k3 = -k1-k2. Returns Ngrid × Ngrid matrix with D[i,j] = residual(k1=kplot[i], k2=kplot[j]),
+matching the Makie/Contour.jl convention Z[i,j] ↔ (x[i], y[j]) for `contour!(ax, kplot, kplot, D)`.
 """
 function resonance_matrix(kplot::AbstractVector, kA::Float64, kB::Float64, s1::Int, s2::Int, s3::Int)
     Ngrid = length(kplot)
@@ -147,7 +166,7 @@ function resonance_matrix(kplot::AbstractVector, kA::Float64, kB::Float64, s1::I
         k1 = kplot[i]
         k2 = kplot[j]
         k3 = wrap_pi(-k1 - k2)
-        D[j, i] = omega_branch(k3, kA, kB, s3) -
+        D[i, j] = omega_branch(k3, kA, kB, s3) -
                   omega_branch(k1, kA, kB, s1) -
                   omega_branch(k2, kA, kB, s2)
     end

@@ -43,6 +43,15 @@ Los scripts importan funciones centralizadas desde `src/`:
 - Movidas funciones duplicadas (`compute_gamma`, `fetch_e`, etc.) a módulo `FPUTCoupling` en `src/fput_coupling.jl`
 - Reorganización temática para claridad de propósito
 - Ver `docs/plotting_backend_diagnostics.md` para problemas conocidos de backend y paleta
+- **Fix orientación de matriz (verificado con `Contour.jl`):** `resonance_matrix` y el llenado
+  de `Gamma` en `compute_gamma` usaban `D[j,i]`/`Gamma[idx][i2,i1]`, transpuesto respecto a la
+  convención de Makie/Contour.jl (`Z[i,j] ↔ (x[i], y[j])`). El bug era invisible en las 4
+  combinaciones de rama simétricas (`s1=s2`: aaa, aao, ooa, ooo) pero producía ejes k1↔k2
+  intercambiados en las 4 asimétricas (aoa, oaa, aoo, oao) de `plot_gamma_with_resonance.jl`.
+  Corregido a `D[i,j]`/`Gamma[idx][i1,i2]`.
+- **Optimización de `compute_gamma`:** `fetch_e` reemplazado por `fetch_e!` con buffer
+  preasignado + `@view` en las columnas de eigenvectores del loop interno. Resultado idéntico
+  numéricamente; ~125× menos allocations y ~1.8× más rápido (Nk=301, Ngrid=101).
 
 ## Notas de desarrollo
 
