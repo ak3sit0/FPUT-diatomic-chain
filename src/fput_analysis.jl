@@ -64,10 +64,7 @@ end
 function spectral_entropy(modal_E::Matrix, delta::Float64)
     N, nt = size(modal_E)
     # Apply sliding average to each mode (row). E_avg is built directly in
-    # (N, nt) orientation and S is reused across modes — the previous
-    # stack(sliding_window_avg(row,...) for row in eachrow(modal_E))' allocated
-    # a fresh cumsum buffer per mode plus an intermediate (nt, N) matrix just to
-    # transpose it back.
+    # (N, nt) orientation and S is reused across modes 
     E_avg = Matrix{Float64}(undef, N, nt)
     S = Vector{Float64}(undef, nt + 1)
     for i in 1:N
