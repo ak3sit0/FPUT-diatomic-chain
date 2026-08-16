@@ -59,7 +59,7 @@ function plot_dispersion(Δκ_values::Vector{Float64},
     # Plot data
     for (i, (ω_opt, ω_ac)) in enumerate(freq_data)
         ls = linestyles[mod1(i, length(linestyles))]
-        col = colors[i]
+        col = colors[mod1(i, length(colors))]
         lw = linewidths[mod1(i, length(linewidths))]
         κ₁ = 1.0 + Δκ_values[i]
         κ₂ = 1.0 - Δκ_values[i]

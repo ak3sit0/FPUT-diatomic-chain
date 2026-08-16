@@ -17,8 +17,12 @@ function apply_recovery_style!()
     default(titlefont=font(16), guidefont=font(14), tickfont=font(11), legendfont=font(12))
 end
 
+"""
+    compute_thermalization_time(t::Vector, E_opt::Vector; threshold=0.9)
+
+Tiempo en que E_opt alcanza el porcentaje umbral (default 90%) de su valor asintótico.
+"""
 function compute_thermalization_time(t::Vector, E_opt::Vector; threshold=0.9)
-    """Tiempo en que E_opt alcanza el 90% de su valor asintótico."""
     if isempty(E_opt) || length(t) != length(E_opt)
         return NaN
     end
@@ -27,14 +31,13 @@ function compute_thermalization_time(t::Vector, E_opt::Vector; threshold=0.9)
     return isnothing(idx) ? NaN : t[idx]
 end
 
+"""
+    plot_halo_scatter!(p, deltas, means, stds, color_main, color_halo; n_layers=5)
+
+Dibuja scatter con efecto de halo (varianza como capas de color degradadas).
+El tamaño del halo es proporcional a la desviación estándar.
+"""
 function plot_halo_scatter!(p, deltas, means, stds, color_main, color_halo; n_layers=5)
-    """
-    Dibuja scatter con efecto de halo (varianza como capas de color degradadas).
-    El tamaño del halo es proporcional a la desviación estándar.
-    Parámetros:
-      - means, stds: centroides y desviaciones estándar
-      - n_layers: número de capas concéntricas del halo
-    """
     max_std = maximum(stds[.!isnan.(stds)])
     max_std = max_std > 0 ? max_std : 1.0
 
