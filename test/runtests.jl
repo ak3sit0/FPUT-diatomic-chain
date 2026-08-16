@@ -84,4 +84,42 @@ include("../src/fput_analysis.jl"); using .FPUTAnalysis
         @test sign_changes > 5
     end
 
+    @testset "FPUT recurrence (Fermi-Pasta-Ulam phenomenon)" begin
+        # Reproduce original FPUT setup: monoatomic chain, fixed boundaries,
+        # mode fundamental excited, observe energy return over ~1000 periods.
+        # Recurrence occurs for both α (quadratic) and β (quartic) nonlinearity.
+        Random.seed!(123)
+
+        N = 32
+        # Monoatomic (delta_k = delta_m = 0), fixed boundaries
+        sp = SystemParams(N, 0.0, 0.0, 0.1, 0.05, :fixed)
+
+        k, m = make_system(sp)
+        freq, V = find_normal_modes(k, m, :fixed)
+
+        # Excite mode 1 (lowest non-zero frequency; mode 0 is wall-to-wall translation)
+        # Energy in fundamental mode ≈ 1.0
+        energy_target = 1.0
+        amplitude = sqrt(2 * energy_target) / freq[2]
+        q0 = amplitude .* V[:, 2]
+        v0 = zeros(N)
+
+        # Integration time: roughly 1000 periods of fundamental frequency
+        T_max = 1200.0 / freq[2]
+
+        # Solve FPUT dynamics
+        Q, V_traj, t, _, _ = solve_fput(sp, q0, v0, (0.0, T_max), 0.1; saveat=0:T_max/30:T_max)
+
+        # Compute modal energies at each time step
+        modal_E_initial = compute_modal_energies(Q[:, 1], V_traj[:, 1], freq, V, m)
+        E_mode1_traj = [compute_modal_energies(Q[:, i], V_traj[:, i], freq, V, m)[2]
+                        for i in axes(Q, 2)]
+
+        # Return ratio: energy in mode 1 at final time / initial time
+        return_ratio = E_mode1_traj[end] / E_mode1_traj[1]
+
+        # Verify recurrence: at least 80% of energy returns to initial mode
+        @test return_ratio > 0.80
+    end
+
 end
