@@ -14,11 +14,11 @@ Include plot_gamma_with_resonance.jl for compute_gamma, resonance_matrix, omega_
 """
 
 using LinearAlgebra, CairoMakie, LaTeXStrings
-#using Contour: contours, lines, coordinates
 using Contour: contours, levels, lines as contour_lines, coordinates
 using Interpolations: interpolate, BSpline, Cubic, Line, OnGrid, scale
 
-include(joinpath(@__DIR__, "plot_gamma_with_resonance.jl"))
+include("../../src/fput_coupling.jl")
+using .FPUTCoupling
 
 # ── Dispersion derivatives (analytic) ─────────────────────────────────────────
 

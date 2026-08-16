@@ -1,6 +1,6 @@
 using LinearAlgebra, CairoMakie, LaTeXStrings
-
-include(joinpath(@__DIR__, "plot_gamma_with_resonance.jl"))
+include("../../src/fput_coupling.jl")
+using .FPUTCoupling
 
 function plot_aao_delta_sweep(delta_values, alfa; Nk=601, Ngrid=201)
     kplot = collect(range(-π, π, length=Ngrid)) # Range of values of k to plot
