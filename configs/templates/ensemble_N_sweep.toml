@@ -1,6 +1,6 @@
 [experiment]
 name        = "ensemble_N_sweep"
-description = "Barrido multi-N del ensamble de fases: Δκ completo, n_real=50"
+description = "Barrido multi-N del ensamble de fases: Δκ completo, n_real=100, eps=0.00695"
 
 [physics]
 N_values       = [32, 64, 128, 256]
@@ -9,14 +9,21 @@ system_type    = "springs"
 nonlinear      = "alpha"
 param_values   = [0.1]
 delta_values   = [0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5]
-energy_density = 0.445
+# ε = 0.00695 (= 0.445/64), la densidad de energía de este problema.
+# E_total = ε·N se resuelve por N en compute_ensemble.jl, así que ε queda FIJA
+# en todo el barrido y la dependencia en N es física, no de densidad.
+energy_density = 0.00695
+
 init_type      = "band_ensemble"
 branch         = "acoustic"
-n_real         = 50
+n_real         = 100   # 5 rondas exactas con ppn=20
 seed_base      = 42
 
 [simulation]
-TMAX          = 1e6
+# scaled_t_max FIJO => generate_hpc_jobs.jl deriva TMAX ∝ N por cada job.
+# 1.5e4 es el scaled_t que alcanzaba N=64 con TMAX=1e6, ya validado en los smoke tests.
+scaled_t_max  = 1.5e4
+TMAX          = 1e6    # sólo se usa si corres el template sin generar jobs
 T_block       = 5e4
 
 # 4.2x más rápido que DT=0.05, validado EN ESTE régimen (band_ensemble, eps=0.445,
@@ -25,9 +32,10 @@ T_block       = 5e4
 # N y Delta_kappa, luego w_max*dt = 0.4, muy por debajo del límite de estabilidad.
 DT            = 0.2
 
-# OJO: save_every fijo hace crecer modal_E como N^2 (a N=256 son 200.000 muestras
-# = 410 MB por realizacion, y spectral_entropy hace ~4 copias). Los jobs antiguos
-# lo ponían a mano como 3N. Pendiente de portar aquí el n_samples de nsweep.
+# IGNORADO al generar jobs: generate_hpc_jobs.jl lo sobreescribe con 3N por cada N
+# (96/192/384/768), que es lo que hacían los jobs antiguos que funcionaban. Con 3N,
+# nt ∝ 1/N y por tanto modal_E = N·nt queda CONSTANTE en N (~13 MB) en vez de ∝ N².
+# Este valor sólo se usa si corres el template directamente, sin generar jobs.
 save_every    = 100
 downsample    = 1
 entropy_delta = 0.6

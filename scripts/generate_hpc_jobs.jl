@@ -19,15 +19,51 @@ Output:
 
 using TOML
 using Dates: today
+include("../src/fput_core.jl"); using .FPUTCore
 
+"""
+    tmax_for_N(cfg, N) -> TMAX
+
+Si el config trae `scaled_t_max`, deriva TMAX = scaled_t_max·2π/ω₂ para ESTE N.
+scaled_t = t·ω₂/2π y ω₂ ∝ 1/N, así que con TMAX FIJO el scaled_t alcanzado cae como
+1/N (3.1e4 a N=32 → 3.9e3 a N=256): E_opt/E saldría más bajo a N grande sólo por
+haber corrido 8× menos tiempo efectivo, y se leería como "el efecto se debilita".
+
+ω₂ depende de Δκ, y TMAX es único para las 9 Δκ del job ⇒ se toma el TMAX MAYOR
+(el de la ω₂ menor) para que TODAS las Δκ alcancen al menos scaled_t_max.
+"""
+function tmax_for_N(cfg::Dict, N::Int)
+    sim = cfg["simulation"]
+    haskey(sim, "scaled_t_max") || return Float64(sim["TMAX"])
+
+    phys     = cfg["physics"]
+    boundary = Symbol(phys["boundary"])
+    stype    = phys["system_type"]
+    stmax    = Float64(sim["scaled_t_max"])
+
+    tmaxs = map(Float64.(phys["delta_values"])) do dk
+        sp = SystemParams(N, stype == "springs" ? dk : 0.0,
+                             stype == "masses"  ? dk : 0.0, 0.0, 0.0, boundary)
+        k, m    = make_system(sp)
+        freq, _ = find_normal_modes(k, m, boundary)
+        sort!(freq)
+        stmax * 2π / freq[boundary == :fixed ? 1 : 2]
+    end
+    maximum(tmaxs)
+end
+
+"""
+ppn = 20 para que n_real=100 salgan 5 rondas EXACTAS (100/20). Con ppn=16 serían
+6.25 → 7 rondas, y la última iría con 4 tareas de 16 (12% de desperdicio).
+El paralelismo vive en las realizaciones, así que ppn > n_real no aportaría nada.
+"""
 function resources_for_N(N)
-    """Retorna (ppn, walltime) escalados según N."""
     if N <= 64
-        return (ppn=8, walltime="12:00:00")
+        return (ppn=20, walltime="06:00:00")
     elseif N <= 128
-        return (ppn=16, walltime="24:00:00")
+        return (ppn=20, walltime="12:00:00")
     else  # N = 256
-        return (ppn=16, walltime="48:00:00")
+        return (ppn=20, walltime="24:00:00")
     end
 end
 
@@ -40,6 +76,17 @@ function write_job_files(base_toml::Dict, N::Int, output_dir::String)
         delete!(cfg["physics"], "N_values")
     end
     cfg["physics"]["N"] = N
+
+    # save_every = 3N por cada N. Con save_every FIJO, nt = TMAX/(DT·save_every) es
+    # constante y modal_E = N·nt crece como N (y como N² si además TMAX ∝ N).
+    # Con 3N, nt ∝ 1/N y modal_E queda constante (~13 MB) para cualquier N.
+    cfg["simulation"]["save_every"] = 3 * N
+
+    # TMAX ∝ N a scaled_t fijo (ver tmax_for_N). Se resuelve aquí porque el generador
+    # es quien conoce N; compute_ensemble.jl sigue leyendo un TMAX absoluto.
+    cfg["simulation"]["TMAX"] = tmax_for_N(base_toml, N)
+    haskey(cfg["simulation"], "scaled_t_max") && delete!(cfg["simulation"], "scaled_t_max")
+    cfg["simulation"]["T_block"] = cfg["simulation"]["TMAX"] / 20
 
     # Mutate base_dir con sufijo _N<N>
     original_base = get(cfg["output"], "base_dir", "results/data/ensemble_N_sweep")
@@ -91,10 +138,10 @@ function write_job_files(base_toml::Dict, N::Int, output_dir::String)
         println(io, "  EXIT_CODE=\$?")
         println(io)
         println(io, "  # Verificar que se guardó el archivo de resultados")
-        println(io, "  RESULT_FILE=\$(find results/data/ensemble_N_sweep_test_N$(N) -name '*.jld2' 2>/dev/null | head -1)")
+        println(io, "  RESULT_FILE=\$(find $(cfg["output"]["base_dir"]) -name '*.jld2' 2>/dev/null | head -1)")
         println(io, "  if [ -z \"\$RESULT_FILE\" ] && [ \$EXIT_CODE -eq 0 ]; then")
         println(io, "    echo \"⚠ WARNING: Script completó pero NO se encontró archivo .jld2\"")
-        println(io, "    ls -lh results/data/ensemble_N_sweep_test_N$(N)/ || echo \"Directorio no existe\"")
+        println(io, "    ls -lh $(cfg["output"]["base_dir"])/ || echo \"Directorio no existe\"")
         println(io, "    EXIT_CODE=1")
         println(io, "  elif [ ! -z \"\$RESULT_FILE\" ]; then")
         println(io, "    echo \"✓ Archivo de resultados: \$RESULT_FILE\"")

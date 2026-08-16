@@ -315,28 +315,39 @@ function run_ensemble_case(case_idx, pval, delta, cfg)
     # bucle era secuencial y el único paralelismo estaba en (param, Δκ) — 9 tareas —,
     # así que con ppn=16 sobraban 7 cores y pedir un nodo mayor no servía de nada.
     # Medido: 8 realizaciones a N=256, 11.4 s en serie → 2.2 s en 8 hilos (5.1×, GC 0%).
-    tasks = map(1:n_real) do r
-        Threads.@spawn begin
-            seed = cfg.seed_base + r
+    # Se lanzan POR LOTES de nthreads() en vez de las n_real de golpe. Lanzarlas todas
+    # deja vivos los n_real resultados a la vez hasta terminar la reducción: con
+    # n_real=100 y modal_E de 13 MB son ~1.3 GB por caso. Por lotes el pico queda
+    # acotado a nthreads() resultados (~260 MB con ppn=20), y no se pierde tiempo:
+    # con n_real múltiplo de ppn los lotes coinciden con las rondas que ya haría.
+    batch = max(nthreads(), 1)
 
-            q0, v0 = if cfg.init_type == "band_ensemble"
-                band_phase_ic(k_band, cfg.E_total, cfg.N, freq, V, m, seed)
-            else
-                U         = Diagonal(1.0 ./ sqrt.(m)) * V
-                amplitude = sqrt(2 * cfg.E_total) / freq[target_mode_idx]
-                (amplitude .* U[:, target_mode_idx], zeros(cfg.N))
+    for batch_start in 1:batch:n_real
+        rs    = batch_start:min(batch_start + batch - 1, n_real)
+        tasks = Vector{Any}(undef, length(rs))   # Any: se ponen a nothing al liberar
+        for (i, r) in enumerate(rs)
+            tasks[i] = Threads.@spawn begin
+                seed = cfg.seed_base + r
+
+                q0, v0 = if cfg.init_type == "band_ensemble"
+                    band_phase_ic(k_band, cfg.E_total, cfg.N, freq, V, m, seed)
+                else
+                    U         = Diagonal(1.0 ./ sqrt.(m)) * V
+                    amplitude = sqrt(2 * cfg.E_total) / freq[target_mode_idx]
+                    (amplitude .* U[:, target_mode_idx], zeros(cfg.N))
+                end
+
+                run_single_realization(sp, q0, v0, freq, V, m,
+                                       target_mode_idx, k_ac, k_opt, cfg,
+                                       "case=$case_idx r=$r/$n_real")
             end
-
-            run_single_realization(sp, q0, v0, freq, V, m,
-                                   target_mode_idx, k_ac, k_opt, cfg,
-                                   "case=$case_idx r=$r/$n_real")
         end
-    end
 
     # La reducción se hace en serie y en orden de r, para que el resultado NO dependa
     # del orden en que terminen los hilos (reproducibilidad bit a bit con las semillas).
-    for (r, t) in enumerate(tasks)
-        result = fetch(t)
+    for (i, r) in enumerate(rs)
+        result = fetch(tasks[i])
+        tasks[i] = nothing        # liberar el resultado en cuanto se acumula
 
         # Descartar realizaciones inestables
         isnothing(result) && (println("  [r=$r] descartada (inestable)"); continue)
@@ -362,6 +373,7 @@ function run_ensemble_case(case_idx, pval, delta, cfg)
                 "E_ac=$(round(result.E_acoustic[end]; digits=4))  " *
                 "E_opt=$(round(result.E_optical[end]; digits=4))")
     end
+    end  # fin del lote
 
     if n_ok == 0
         println("[case $case_idx] Todas las realizaciones inestables. Descartando caso.")
