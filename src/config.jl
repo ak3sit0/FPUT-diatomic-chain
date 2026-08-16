@@ -7,54 +7,19 @@ export ExperimentConfig, PlotConfig,
        default_plot_config
 
 struct ExperimentConfig
-    name::String
-    description::String
-    N::Int
-    boundary::Symbol
     system_type::Symbol
+    boundary::Symbol
     nonlinear::Symbol
-    param_values::Vector{Float64}
-    delta_values::Vector{Float64}
-    initial_condition::Symbol
-    initial_energy::Float64
-    init_mode::Union{Int,Nothing}
-    TMAX::Float64
-    T_block::Float64
-    DT::Float64
-    save_every::Int
-    downsample::Int
-    debug::Bool
-    base_dir::String
 end
 
 function load_experiment_config(path::String)::ExperimentConfig
     isfile(path) || error("Config file not found: $path")
-    d = TOML.parsefile(path)
-
-    m = d["experiment"]
-    p = d["physics"]
-    s = d["simulation"]
-    o = d["output"]
+    p = TOML.parsefile(path)["physics"]
 
     ExperimentConfig(
-        m["name"],
-        get(m, "description", ""),
-        Int(p["N"]),
-        Symbol(p["boundary"]),
         Symbol(p["system_type"]),
+        Symbol(p["boundary"]),
         Symbol(p["nonlinear"]),
-        Float64.(p["param_values"]),
-        Float64.(p["delta_values"]),
-        Symbol(get(p, "initial_condition", "low")),
-        Float64(get(p, "initial_energy", 0.45)),
-        haskey(p, "init_mode") ? Int(p["init_mode"]) : nothing,
-        Float64(s["TMAX"]),
-        Float64(s["T_block"]),
-        Float64(get(s, "DT", 0.05)),
-        Int(get(s, "save_every", 1000)),
-        Int(get(s, "downsample", 2)),
-        Bool(get(s, "debug", true)),
-        o["base_dir"],
     )
 end
 
