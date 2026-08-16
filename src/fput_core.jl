@@ -2,7 +2,7 @@ module FPUTCore
 
 using LinearAlgebra
 
-export SystemParams, make_system, fput_forces!, find_normal_modes
+export SystemParams, make_system, fput_forces!, find_normal_modes, bond_potential
 
 # ── Layer 1: Domain types (SICP: Data Abstraction) ──
 struct SystemParams
@@ -35,6 +35,14 @@ Factored as k·Δ·(1 + Δ·(α + β·Δ)) to save multiplications.
 """
 @inline bond_force(kj, d, alpha, beta) = kj * d * (1 + d * (alpha + beta * d)) # @inline for performance, since this is called in tight loops.
 @inline bond_force_a(kj, d, alpha)     = kj * d * (1 + alpha * d)   # case β = 0
+
+"""
+    bond_potential(kj, d, alpha, beta) -> V
+
+Bond potential energy: V_bond = k/2·Δ² + α·k/3·Δ³ + β·k/4·Δ⁴
+Used for energy conservation checks in tests.
+"""
+@inline bond_potential(kj, d, alpha, beta) = kj * (0.5*d^2 + (alpha/3)*d^3 + (beta/4)*d^4)
 
 # Forces by BOND (not by site): each bond is evaluated only once, then
 # dv[i] = (F_right - F_left)·inv_m[i]. Previous version computed each bond
