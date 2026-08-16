@@ -25,11 +25,11 @@ end
 
 """
     sliding_window_avg(series::AbstractVector, delta::Float64)
-SICP-like: computes a moving average where window grows with time (Δ*t).
+    computes a moving average where window grows with time (Δ*t).
 """
 function sliding_window_avg(E::AbstractVector{T}, Δ::Float64) where T
     n = length(E)
-    S = pushfirst!(cumsum(E), zero(T))
+    S = pushfirst!(cumsum(E), zero(T)) # cumulative sum with S[1] = 0
     avgs = Vector{Float64}(undef, n)
     for t in 1:n
         start_t = max(1, Int(floor(Δ * t)))

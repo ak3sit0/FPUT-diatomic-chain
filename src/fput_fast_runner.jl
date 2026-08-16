@@ -1,9 +1,9 @@
 module FPUTFastRunner
 
 using DifferentialEquations
-using ..FPUTCore
+using ..FPUTCore # FPUTCore is the module that contains the core physics and system definitions
 
-export solve_fput
+export solve_fput # Functional wrapper for the ODE solver.
 
 """
     solve_fput(p::SystemParams, q0, v0, tspan, dt; saveat)
@@ -11,8 +11,8 @@ Functional wrapper for the ODE solver.
 """
 function solve_fput(p::SystemParams, q0, v0, tspan, dt; saveat=nothing)
     k, m = make_system(p)
-    # inv_m evita una división por sitio y por evaluación (18 evaluaciones por paso);
-    # F es el buffer de fuerzas por enlace, propio de esta llamada ⇒ seguro entre hilos.
+    # inv_m avoids division per site per evaluation (18 evaluations per step);
+    # F is the force buffer per bond, unique to this call ⇒ thread-safe.
     inv_m = 1.0 ./ m
     F     = Vector{Float64}(undef, p.boundary == :fixed ? p.N + 1 : p.N)
     p_ode = (k, inv_m, p.alpha, p.beta, p.boundary, F)

@@ -5,7 +5,6 @@ using LinearAlgebra
 export SystemParams, make_system, fput_forces!, find_normal_modes
 
 # ── Layer 1: Domain types (SICP: Data Abstraction) ──
-
 struct SystemParams
     N::Int
     delta_k::Float64
@@ -16,7 +15,6 @@ struct SystemParams
 end
 
 # ── Layer 2: System Construction ──
-
 """
     make_system(p::SystemParams) -> (k, m)
 Constructs the chain's physical properties. Pattern: 1 ± Δ (alternating).
@@ -27,23 +25,21 @@ function make_system(p::SystemParams)
     m = [1.0 + p.delta_m * (-1.0)^(i-1) for i in 1:p.N]
     return k, m
 end
-
 # ── Layer 3: Physics Kernels (Functional style within mutation) ──
-
 """
     bond_force(kj, d, alpha, beta) -> F
 
-Fuerza del enlace j con elongación `d`. Del potencial con escalado en k:
+Bond force j with elongation `d`. From potential with k scaling:
   V_bond = k/2·Δ² + α·k/3·Δ³ + β·k/4·Δ⁴   ⇒   F_bond = k·Δ + α·k·Δ² + β·k·Δ³
-Factorizado como k·Δ·(1 + Δ·(α + β·Δ)) para ahorrar multiplicaciones.
+Factored as k·Δ·(1 + Δ·(α + β·Δ)) to save multiplications.
 """
-@inline bond_force(kj, d, alpha, beta) = kj * d * (1 + d * (alpha + beta * d))
-@inline bond_force_a(kj, d, alpha)     = kj * d * (1 + alpha * d)   # caso β = 0
+@inline bond_force(kj, d, alpha, beta) = kj * d * (1 + d * (alpha + beta * d)) # @inline for performance, since this is called in tight loops.
+@inline bond_force_a(kj, d, alpha)     = kj * d * (1 + alpha * d)   # case β = 0
 
-# Fuerzas por ENLACE (no por sitio): cada enlace se evalúa una sola vez y luego
-# dv[i] = (F_derecha - F_izquierda)·inv_m[i]. La versión anterior calculaba cada
-# enlace dos veces (como f_right de i y como f_left de i+1) y llevaba los
-# condicionales de frontera dentro del bucle, lo que impedía vectorizar.
+# Forces by BOND (not by site): each bond is evaluated only once, then
+# dv[i] = (F_right - F_left)·inv_m[i]. Previous version computed each bond
+# twice (as f_right of i and as f_left of i+1) and had boundary conditionals
+# inside the loop, preventing vectorization.
 
 function _bonds_periodic!(F, q, k, alpha, beta, N)
     @inbounds if beta == 0.0
@@ -60,7 +56,7 @@ function _bonds_periodic!(F, q, k, alpha, beta, N)
 end
 
 function _bonds_fixed!(F, q, k, alpha, beta, N)
-    # Enlace 1: pared–sitio 1 (d = q₁);  enlace N+1: sitio N–pared (d = −q_N)
+    # Bond 1: wall–site 1 (d = q₁);  bond N+1: site N–wall (d = −q_N)
     @inbounds if beta == 0.0
         F[1] = bond_force_a(k[1], q[1], alpha)
         @simd for j in 2:N
@@ -79,9 +75,9 @@ end
 """
     fput_forces!(dv, v, q, p_ode, t)
 The core Hamiltonian derivative. p_ode = (k, inv_m, alpha, beta, boundary, F)
-`inv_m` = 1 ./ m precalculado; `F` = buffer de fuerzas por enlace (longitud N para
-:periodic, N+1 para :fixed). El buffer es por-llamada a `solve_fput`, así que cada
-hilo tiene el suyo.
+`inv_m` = 1 ./ m precomputed; `F` = force buffer per bond (length N for
+:periodic, N+1 for :fixed). The buffer is per-call to `solve_fput`, so each
+thread has its own.
 """
 function fput_forces!(dv, v, q, p_ode, t)
     k, inv_m, alpha, beta, boundary, F = p_ode
@@ -130,8 +126,8 @@ function find_normal_modes(k, m, boundary)
             D[i, nxt] = -k[i] / sqrt(m[i] * m[nxt])
         end
     end
-    λ, V = eigen(D)
-    return sqrt.(max.(0.0, real.(λ))), V   # max evita sqrt de negativos por redondeo flotante
+    λ, V = eigen(symmetric(D))
+    return sqrt.(max.(0.0, real.(λ))), V   # max avoids sqrt of negatives from floating-point rounding
 end
 
 end # module FPUTCore
