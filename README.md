@@ -239,6 +239,11 @@ ensemble case:
 The only versioned output is [results/scattering_rate/R_vs_delta.csv](results/scattering_rate/R_vs_delta.csv).
 Reproducing everything else requires re-running the pipelines.
 
+The `jobs/` directory is local-only: `.gitkeep` marks the directory, but generated
+`.pbs` and `.toml` files (written by the HPC job generators) are never versioned. They
+serve as an audit trail on your machine for which configurations were submitted; to clean
+up, run `git clean -fd jobs/` (after backing up any `.pbs` scripts you want to keep).
+
 ---
 
 ## License

@@ -54,6 +54,7 @@ __pycache__/
 # HPC
 jobs/*.pbs
 jobs/*.log
+jobs/*.toml
 *.e*
 *.o*
 
