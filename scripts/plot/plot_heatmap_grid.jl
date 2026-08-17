@@ -56,28 +56,17 @@ struct PanelData
     z_plot::Matrix{Float64}
 end
 
-"""Columns per panel above which rendering gets expensive enough to warn about."""
-const COLS_WARN = 200_000
-
 function prepare_panel_data(result, cfg)
     t_raw = Float64.(result.scaled_t)
     z_raw = result.modal_E
     size(z_raw, 1) > size(z_raw, 2) && (z_raw = permutedims(z_raw))
 
-    # Resolve the kept columns first, then slice once. Slicing in two steps
-    # (`z[:, window][:, ::sub]`) copies the whole N×nt matrix twice — ~0.5 GB per
-    # copy at nt = 10⁶.
+    # Window to the time range, then subsample. Slice once to avoid multiple copies.
     idx = findall(t -> cfg.t_min <= t <= cfg.t_max, t_raw)
     cfg.time_subsample > 1 && (idx = idx[1:cfg.time_subsample:end])
 
-    if length(idx) > COLS_WARN
-        @warn "Panel has $(length(idx)) time columns; rendering will be slow and memory-hungry. \
-               Set `time_subsample` (or `t_max`) in a plot TOML to thin it — note that changes \
-               the rasterized result, so keep it fixed across figures meant to be compared." maxlog=1
-    end
-
     t_vals = t_raw[idx]
-    z_plot = clamp.(Float64.(@view z_raw[:, idx]), cfg.clamp_min, cfg.clamp_max)
+    z_plot = clamp.(Float64.(z_raw[:, idx]), cfg.clamp_min, cfg.clamp_max)
 
     # Log-scale x axis: push non-positive times a decade below the smallest positive one.
     if any(<=(0), t_vals)

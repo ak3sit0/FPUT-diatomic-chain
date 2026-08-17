@@ -9,7 +9,8 @@ Usage:
   julia --project=. scripts/plot_entropy_param_sweep.jl <plot_config.toml | results.jld2>
 """
 
-using Plots, JLD2, LaTeXStrings
+# Import libraries
+using Plots, JLD2, LaTeXStrings 
 import Plots: mm
 include("../../src/config.jl");         using .Config
 include("../../src/fput_analysis.jl");  using .FPUTAnalysis
@@ -20,6 +21,7 @@ struct ProcessedRun
     times::Vector{Float64}
     modal_E::Matrix{Float64}
 end
+
 
 function build_plot_config(input_arg::Union{String,Nothing})
     if isnothing(input_arg)
@@ -68,7 +70,7 @@ function apply_global_plot_style!()
 end
 
 function build_base_plot(ylabel::LaTeXString)
-    exp_range = 0:6
+    exp_range = 0:6 # 
     plot(xlabel = L"t", ylabel = ylabel, legend = :bottomright, framestyle = :box,
          grid = false, xscale = :log10, size = (800, 600),
          xticks = (10.0 .^ exp_range, [latexstring("10^{$(i)}") for i in exp_range]),
@@ -126,7 +128,7 @@ function main()
             pcfg.smooth_delta, pcfg.outdir_entropy)
     end
 
-    println("✓ Done. Entropy plots saved to:")
+    println("Done. Entropy plots saved to:")
     println("  • $(pcfg.outdir_entropy)")
 end
 

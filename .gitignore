@@ -65,3 +65,7 @@ plan_ensamble_fases.md
 
 #CSV files
 *.csv
+
+# Deprecated folders and files
+/deprecated/
+/docs/
