@@ -315,6 +315,9 @@ function main()
     cfg = build_nsweep_config(ARGS[1])
     mkpath(cfg.base_dir)
 
+    if length(cfg.param_values) > 1
+        @warn "TOML has $(length(cfg.param_values)) param values, but Nsweep only processes param_values[1]. For full sweep, use compute_ensemble.jl instead."
+    end
     pval = cfg.param_values[1]
 
     println("=== Nsweep ===")

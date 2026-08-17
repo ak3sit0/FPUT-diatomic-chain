@@ -142,4 +142,6 @@ function main()
     println("  → fig_entropy_PBC.pdf/.png")
 end
 
-main()
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end

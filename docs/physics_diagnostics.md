@@ -33,3 +33,15 @@ El Fix 2 de orientación de matriz garantiza que esta simetría se refleja corre
 - Termalización observada es intraaústica, no transferencia interband
 - Específica a Δκ ≈ 0.1–0.2 (ver `plot_entropy_Nsweep.jl`, `plot_thermalization_time.jl`)
 - TMAX debe escalar ∝ N para resolver dinámicas resonantes a diferentes tamaños de sistema
+
+## Doble formula de dispersión ω(k) — riesgo de divergencia silenciosa
+
+**Estado:** No verificado — solo señalado, sin evidencia de que actualmente difieran.
+
+`src/dispersion.jl` (`omega_ac`, `omega_op`) y `src/fput_coupling.jl` (`omega_branch`) calculan la misma física — la dispersión ω(k) de la cadena diatómica — con fórmulas escritas independientemente en dos parametrizaciones distintas (κ₁,κ₂ absolutos vs Δκ compacto). No están unificadas: un cambio futuro en una convención (p.ej. signo de disc, definición de κ*) puede divergir silenciosamente de la otra sin que ningún test lo detecte, porque cada módulo se usa en scripts distintos y nada los compara entre sí.
+
+**Sugerencia para más adelante:** un test de regresión que compare `omega_branch(k,kA,kB,·)` contra `omega_ac`/`omega_op` (o su forma compacta) en una grilla de k y Δκ, verificando equivalencia algebraica vía `sp.simplify` antes de confiar en que ambas parametrizaciones son intercambiables.
+
+## Inconsistencia de esquema entre `compute_ensemble.jl` y `compute_ensemble_Nsweep.jl`
+
+`compute_ensemble_Nsweep.jl` no calcula `T_therm_*` (tiempo de termalización), a diferencia de `compute_ensemble.jl`. Los scripts de plotting que consumen ambos formatos (`plot_ensemble_results.jl`, `plot_thermalization_time.jl`) asumen implícitamente que ese campo existe — si algún día se apunta `plot_thermalization_time.jl` a un resultado de `compute_ensemble_Nsweep.jl`, fallará o dará datos incompletos sin previo aviso. No es un bug de física en sí, pero afecta la interpretación de qué corridas son comparables entre sí.

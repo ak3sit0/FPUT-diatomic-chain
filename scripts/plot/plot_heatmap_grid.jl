@@ -85,7 +85,7 @@ function prepare_panel_data(result, cfg)
 end
 
 function find_result(dataset::HeatmapDataset, param, delta)
-    idx = findfirst(r -> r.param ≈ param && r.Delta ≈ delta, dataset.results)
+    idx = findfirst(r -> isapprox(r.param, param; rtol=1e-6) && isapprox(r.Delta, delta; rtol=1e-6), dataset.results)
     isnothing(idx) ? nothing : dataset.results[idx]
 end
 

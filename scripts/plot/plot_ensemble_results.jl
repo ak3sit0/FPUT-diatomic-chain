@@ -15,8 +15,12 @@ using JLD2, CairoMakie, Statistics, LaTeXStrings, Colors
 
 const BLUES_GRADIENT = cgrad([:white, "#B2D9FF", "#5999F2", "#3359CC", "#0D4CB3"])
 
+"""
+    compute_thermalization_time(t::Vector, E_opt::Vector; threshold=0.9)
+
+Calcula el tiempo en que E_opt alcanza el 90% de su valor asintótico.
+"""
 function compute_thermalization_time(t::Vector, E_opt::Vector; threshold=0.9)
-    """Calcula el tiempo en que E_opt alcanza el 90% de su valor asintótico."""
     if isempty(E_opt) || length(t) != length(E_opt)
         return NaN
     end

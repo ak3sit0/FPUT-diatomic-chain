@@ -55,3 +55,14 @@ No existe una única definición de "paleta estándar FPUT" reutilizable.
 ## Por qué no retraso esto más
 
 La duplicación de paleta no es solo "estética". Con 8 combinaciones de rama en coeficientes acoplados + múltiples valores de Δκ en barridos, la indexación cíclica robusta (`mod1`) es **crítica** para evitar excepciones. El bug actual en `plot_dispersion_relation.jl` es el síntoma de que la lógica de indexing no está centralizada.
+
+## Extensión: scripts/ (plots del paper y ensembles)
+
+Mismo problema de fondo, con más superficie:
+
+- **Split de backend**: `plot_ensemble_results.jl` y `plot_heatmap_grid.jl` usan CairoMakie; `plot_entropy_paper.jl`, `plot_entropy_param_sweep.jl`, `plot_entropy_pbc_complete.jl`, `plot_ftmle.jl` usan Plots.jl. Son figuras del **mismo paper** producidas por dos stacks distintos con manejo de fuente/DPI/márgenes diferente — riesgo real de inconsistencia visual entre paneles de una misma publicación.
+- **Tres sistemas de color independientes** sin fuente única: los hex arrays `SPEC_FBC`/`SPEC_PBC`/`SPEC_PBC_COMPLETE` (`plot_entropy_paper.jl`, `plot_entropy_pbc_complete.jl`), el gradient `BLUES_GRADIENT` duplicado literalmente en `plot_ensemble_results.jl` y `plot_heatmap_grid.jl`, y el `PALETTE`/`LINESTYLES` de `plot_ftmle.jl`.
+- Colores hex como `"#0D4CB3"` repetidos ~8 veces como literales en `plot_ensemble_results.jl` en vez de constantes nombradas — riesgo de que diverjan silenciosamente de `BLUES_GRADIENT`.
+- Punto positivo: el patrón `colors[i]` sin `mod1` (el bug de `plot_dispersion_relation.jl`) **no** aparece en `scripts/` — `plot_entropy_param_sweep.jl` y `plot_ftmle.jl` ya usan `mod1` correctamente.
+
+La recomendación de "unificar a un solo backend + centralizar paletas en `src/plotting_utils.jl`" aplica igual aquí, y cubriría examples/ y scripts/ a la vez.

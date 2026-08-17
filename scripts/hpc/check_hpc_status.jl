@@ -15,8 +15,12 @@ Output:
 
 using Printf
 
+"""
+    check_job_status(N::Int)
+
+Verifica el estado de un job N específico.
+"""
 function check_job_status(N::Int)
-    """Verifica el estado de un job N específico."""
     # Buscar archivos
     logs = readdir("results/logs", join=true) |>
            x -> filter(f -> match(Regex("ensemble_N$(N).*\\.log"), f) !== nothing, x)
