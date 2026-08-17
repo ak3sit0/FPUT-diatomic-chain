@@ -11,8 +11,8 @@ Usage:
 
 using Plots, JLD2, LaTeXStrings
 import Plots: mm
-include("../src/config.jl"); using Main.Config
-include("../src/fput_analysis.jl"); using .FPUTAnalysis
+include("../../src/config.jl"); using Main.Config
+include("../../src/fput_analysis.jl"); using .FPUTAnalysis
 
 const SMOOTH_DELTA = 0.6
 const EPS = 1e-18

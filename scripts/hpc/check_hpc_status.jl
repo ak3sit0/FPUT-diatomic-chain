@@ -1,39 +1,52 @@
 """
     check_hpc_status.jl
 
-Revisa el estado de los jobs HPC multi-N y genera un reporte.
+Revisa el estado de los jobs HPC y genera un reporte.
 Verifica logs, archivos .SUCCESS/.FAILED, y si existen outputs JLD2.
 
-Usage:
-  julia --project=. scripts/check_hpc_status.jl
+Descubre los jobs a partir de los .pbs generados en jobs/ (por generate_hpc_jobs.jl
+o generate_pbs_nsweep.jl indistintamente) en vez de asumir un naming/N_values fijo,
+así funciona con cualquiera de los dos generadores.
 
-Output:
-  - Tabla de estado de cada N
-  - Detalles de errores si los hay
-  - Comandos para ver logs completos
+Usage:
+  julia --project=. scripts/hpc/check_hpc_status.jl
 """
 
 using Printf
+using TOML
+
+"Nombres de job (basename sin extensión) de todos los .pbs en jobs/."
+function discover_jobs(jobs_dir::String="jobs")
+    isdir(jobs_dir) || return String[]
+    pbs_files = filter(f -> endswith(f, ".pbs"), readdir(jobs_dir))
+    sort([splitext(f)[1] for f in pbs_files])
+end
+
+"Lee output.base_dir del .toml homónimo del job, si existe."
+function output_dir_for_job(jobname::String, jobs_dir::String="jobs")
+    toml_path = joinpath(jobs_dir, "$(jobname).toml")
+    isfile(toml_path) || return nothing
+    cfg = TOML.parsefile(toml_path)
+    get(get(cfg, "output", Dict{String,Any}()), "base_dir", nothing)
+end
 
 """
-    check_job_status(N::Int)
+    check_job_status(jobname; jobs_dir="jobs", logs_dir="results/logs")
 
-Verifica el estado de un job N específico.
+Verifica el estado de un job específico buscando `<jobname>_<PBS_JOBID>.{log,SUCCESS,FAILED}`
+en `logs_dir`, y el directorio de salida declarado en `jobs/<jobname>.toml`.
 """
-function check_job_status(N::Int)
-    # Buscar archivos
-    logs = readdir("results/logs", join=true) |>
-           x -> filter(f -> match(Regex("ensemble_N$(N).*\\.log"), f) !== nothing, x)
+function check_job_status(jobname::String; jobs_dir::String="jobs", logs_dir::String="results/logs")
+    esc = replace(jobname, r"([.^$|()\[\]{}*+?\\])" => s"\\\1")
+    pattern = Regex("^$(esc)_.*\\.(log|SUCCESS|FAILED)\$")
+    files = isdir(logs_dir) ? filter(f -> match(pattern, f) !== nothing, readdir(logs_dir)) : String[]
 
-    success = readdir("results/logs", join=true) |>
-              x -> filter(f -> match(Regex("ensemble_N$(N).*\\.SUCCESS"), f) !== nothing, x)
+    logs    = joinpath.(logs_dir, filter(f -> endswith(f, ".log"), files))
+    success = joinpath.(logs_dir, filter(f -> endswith(f, ".SUCCESS"), files))
+    failed  = joinpath.(logs_dir, filter(f -> endswith(f, ".FAILED"), files))
 
-    failed = readdir("results/logs", join=true) |>
-             x -> filter(f -> match(Regex("ensemble_N$(N).*\\.FAILED"), f) !== nothing, x)
-
-    # Buscar output JLD2
-    output_dir = "results/data/ensemble_N_sweep_N$(N)"
-    output_exists = isdir(output_dir)
+    output_dir = output_dir_for_job(jobname, jobs_dir)
+    output_exists = !isnothing(output_dir) && isdir(output_dir)
     output_size = 0
     if output_exists
         jld2_files = filter(f -> endswith(f, ".jld2"), readdir(output_dir))
@@ -42,7 +55,6 @@ function check_job_status(N::Int)
         end
     end
 
-    # Determinar estado
     status = if !isempty(success)
         "✓ SUCCESS"
     elseif !isempty(failed)
@@ -54,11 +66,17 @@ function check_job_status(N::Int)
     end
 
     return (status=status, logs=logs, success=success, failed=failed,
-            output_exists=output_exists, output_size=output_size)
+            output_dir=output_dir, output_exists=output_exists, output_size=output_size)
 end
 
 function main()
-    N_values = [32, 64, 128, 256]
+    jobnames = discover_jobs()
+    if isempty(jobnames)
+        println("No se encontraron .pbs en jobs/. Generar jobs primero con")
+        println("  julia --project=. scripts/hpc/generate_hpc_jobs.jl <config>")
+        println("  julia --project=. scripts/hpc/generate_pbs_nsweep.jl <config>")
+        return
+    end
 
     println()
     println("=" ^ 80)
@@ -66,20 +84,19 @@ function main()
     println("=" ^ 80)
     println()
 
-    # Tabla de resumen
-    println(@sprintf "%-8s | %-20s | %-10s | %-15s", "N", "Status", "Output", "Size")
-    println("-" ^ 60)
+    println(@sprintf("%-28s | %-20s | %-10s | %-15s", "Job", "Status", "Output", "Size"))
+    println("-" ^ 80)
 
-    results = Dict()
-    for N in N_values
-        r = check_job_status(N)
-        results[N] = r
+    results = Dict{String,Any}()
+    for jobname in jobnames
+        r = check_job_status(jobname)
+        results[jobname] = r
 
         output_str = r.output_exists ? "✓ Exists" : "✗ Missing"
         size_str = r.output_exists ? "$(round(r.output_size / 1e9; digits=2)) GB" : "—"
 
-        println(@sprintf "%-8d | %-20s | %-10s | %-15s",
-                N, r.status, output_str, size_str)
+        println(@sprintf("%-28s | %-20s | %-10s | %-15s",
+                jobname, r.status, output_str, size_str))
     end
 
     println()
@@ -87,19 +104,19 @@ function main()
     println()
 
     # Detalles de cada job
-    for N in N_values
-        r = results[N]
+    for jobname in jobnames
+        r = results[jobname]
 
         if r.status == "✓ SUCCESS"
-            println("[$N] ✓ Completed successfully")
+            println("[$jobname] ✓ Completed successfully")
             if !isempty(r.logs)
                 println("     Log: $(basename(r.logs[1]))")
             end
             if r.output_exists
-                println("     Output: results/data/ensemble_N_sweep_N$(N)/")
+                println("     Output: $(r.output_dir)/")
             end
         elseif r.status == "✗ FAILED"
-            println("[$N] ✗ FAILED - Ver detalles:")
+            println("[$jobname] ✗ FAILED - Ver detalles:")
             if !isempty(r.failed)
                 failed_file = r.failed[1]
                 println("     Failed marker: $(basename(failed_file))")
@@ -121,16 +138,16 @@ function main()
                 end
             end
         elseif r.status == "⏳ RUNNING/QUEUED"
-            println("[$N] ⏳ Still running or in queue")
+            println("[$jobname] ⏳ Still running or in queue")
             if !isempty(r.logs)
                 println("     Log: $(r.logs[1])")
                 println("     Ver progreso en tiempo real:")
                 println("       tail -f $(r.logs[1])")
             end
         else
-            println("[$N] ❓ No logs found yet")
+            println("[$jobname] ❓ No logs found yet")
             println("     Comando para enviar:")
-            println("       qsub jobs/ensemble_N$(N).pbs")
+            println("       qsub jobs/$(jobname).pbs")
         end
 
         println()
@@ -155,9 +172,9 @@ function main()
         println("⚠️  ALERT: $failed_count jobs failed. Check logs above.")
         println()
         println("To resubmit a failed job:")
-        for N in N_values
-            if results[N].status == "✗ FAILED"
-                println("  qsub jobs/ensemble_N$(N).pbs")
+        for jobname in jobnames
+            if results[jobname].status == "✗ FAILED"
+                println("  qsub jobs/$(jobname).pbs")
             end
         end
     elseif running_count > 0
@@ -165,17 +182,14 @@ function main()
         println()
         println("To monitor in real-time:")
         println("  qstat")
-        println("  tail -f results/logs/ensemble_N*.log")
-    elseif success_count == length(N_values)
+        println("  tail -f results/logs/*.log")
+    elseif success_count == length(jobnames)
         println("✅ ALL JOBS COMPLETED SUCCESSFULLY!")
         println()
         println("Next steps:")
-        println("  1. Analyze results:")
-        println("     julia --project=. examples/plot_thermalization_time.jl \\")
-        println("       results/data/ensemble_N_sweep_N32/ensemble_results_*.jld2")
-        println()
+        println("  1. Analyze results (see each job's output_dir above)")
         println("  2. Check output sizes (should be >100MB each):")
-        println("     du -h results/data/ensemble_N_sweep_N*/")
+        println("     du -h results/data/*/")
     end
 
     println()

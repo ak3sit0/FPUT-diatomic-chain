@@ -13,101 +13,12 @@ Convención de energía:
 """
 
 using TOML, JLD2, Dates, Base.Threads, Statistics, LinearAlgebra, Random
-include("../src/fput_core.jl");        using .FPUTCore
-include("../src/fput_fast_runner.jl"); using .FPUTFastRunner
-include("../src/fput_analysis.jl");    using .FPUTAnalysis
+include("../../src/fput_core.jl");        using .FPUTCore
+include("../../src/fput_fast_runner.jl"); using .FPUTFastRunner
+include("../../src/fput_analysis.jl");    using .FPUTAnalysis
+include("../../src/block_integration.jl"); using .BlockIntegration
 
-# ── Funciones de inicialización ───────────────────────────────────────────────
-
-"""
-    derive_band_indices(branch, N, freq, boundary; k_band_start, k_band_end)
-
-Devuelve Vector{Int} (1-based) de los índices de modo para la rama solicitada.
-`freq` debe estar ordenado en forma ascendente antes de llamar esta función.
-Si k_band_start/k_band_end están presentes, los usa directamente (override manual).
-"""
-function derive_band_indices(branch::String, N::Int, freq::Vector{Float64},
-                              boundary::Symbol;
-                              k_band_start::Union{Int,Nothing}=nothing,
-                              k_band_end::Union{Int,Nothing}=nothing)
-    if !isnothing(k_band_start) && !isnothing(k_band_end)
-        return collect(k_band_start:k_band_end)
-    end
-
-    if boundary == :periodic
-        isodd(N) && error("La cadena diatómica con PBC exige N par (resortes alternados); N=$N")
-
-        # El gap acústico/óptico está ESTRUCTURALMENTE en N/2: N/2 modos por rama.
-        # NO se detecta con argmax(diff(freq)): a N pequeño y Δκ pequeño el espaciado
-        # intrabanda (~1/N) supera al gap (~Δκ) y argmax cae dentro de la rama acústica.
-        # Medido: N=32 Δκ=0.10 daba gap_idx=3 (banda 2:3 en vez de 2:16); N=64 Δκ=0.05
-        # también fallaba. A partir de N≥128 argmax acierta, pero no hace falta confiar
-        # en él habiendo una respuesta exacta.
-        gap_idx = N ÷ 2
-
-        # El argmax se conserva sólo como diagnóstico.
-        argmax_idx = argmax(diff(freq)[2:end]) + 1
-        if argmax_idx != gap_idx
-            @warn "Gap por argmax ($argmax_idx) ≠ estructural ($gap_idx): el espaciado " *
-                  "intrabanda supera al gap. Se usa el estructural (N/2)." N branch
-        end
-
-        branch == "acoustic" && return collect(2:gap_idx)   # excluye traslación (ω≈0)
-        branch == "optical"  && return collect(gap_idx+1:N)
-        error("branch debe ser 'acoustic' o 'optical', recibido: '$branch'")
-    else  # :fixed
-        branch == "acoustic" && return collect(1:N)
-        error("Frontera fija no tiene rama óptica distinguible")
-    end
-end
-
-"""
-    band_phase_ic(k_band, E_total, N, freq, V, m, seed) -> (q0, v0)
-
-Condición inicial de banda selectiva con fases aleatorias uniformes.
-
-Energía E_total distribuida uniformemente sobre los modos en k_band:
-  E_j = E_total / length(k_band)  para j ∈ k_band
-  Q_j =  sqrt(2·E_j) / ω_j · cos(φ_j),  P_j = -sqrt(2·E_j) · sin(φ_j)
-  q = (1/√m) · V · Q,   v = (1/√m) · V · P
-
-Validación post-construcción con @assert (precisión de máquina).
-"""
-function band_phase_ic(k_band::AbstractVector{Int}, E_total::Float64, N::Int,
-                       freq::Vector{Float64}, V::Matrix{Float64},
-                       m::Vector{Float64}, seed::Int)
-    rng    = Random.Xoshiro(seed)
-    E_per  = E_total / length(k_band)
-    Q      = zeros(N)
-    P      = zeros(N)
-
-    for j in k_band
-        freq[j] < 1e-10 && continue   # modo de Goldstone (traslación, ω≈0)
-        φ    = rand(rng) * 2π
-        A    = sqrt(2 * E_per)
-        Q[j] =  A / freq[j] * cos(φ)
-        P[j] = -A            * sin(φ)
-    end
-
-    inv_sqrt_m = 1.0 ./ sqrt.(m)
-    q0 = (V * Q) .* inv_sqrt_m
-    v0 = (V * P) .* inv_sqrt_m
-
-    # Proyectar de vuelta para verificar
-    x        = sqrt.(m) .* q0
-    vx       = sqrt.(m) .* v0
-    Q_check  = V' * x
-    P_check  = V' * vx
-    E_check  = 0.5 .* (P_check.^2 .+ (freq.^2) .* Q_check.^2)
-    E_out    = sum(E_check[setdiff(1:N, k_band)])
-    E_in     = sum(E_check[k_band])
-    tol      = 1e-8 * E_total
-
-    @assert E_out < tol        "Fuga de energía fuera de banda: E_out=$(E_out) (tol=$(tol))"
-    @assert abs(E_in - E_total) < tol "Normalización incorrecta: E_in=$(E_in) vs E_total=$(E_total)"
-
-    return q0, v0
-end
+# derive_band_indices y band_phase_ic viven en FPUTCore (src/fput_core.jl)
 
 # ── Configuración ─────────────────────────────────────────────────────────────
 
@@ -155,72 +66,34 @@ end
 
 # k_ac, k_opt: índices de modos acústicos y ópticos (para diagnóstico interbanda)
 function run_single_realization(sp, q0, v0, freq, V, m, target_mode_idx, k_ac, k_opt, cfg, label)
-    q_cur = copy(q0)
-    v_cur = copy(v0)
-    T_total        = Float64[]
-    modal_E_blocks = Vector{Matrix{Float64}}()
-    E_ac_blocks    = Vector{Vector{Float64}}()   # energía total banda acústica vs t
-    E_opt_blocks   = Vector{Vector{Float64}}()   # energía total banda óptica vs t
-    t_cur          = 0.0
+    E_ac_blocks  = Vector{Vector{Float64}}()   # energía total banda acústica vs t
+    E_opt_blocks = Vector{Vector{Float64}}()   # energía total banda óptica vs t
 
-    while t_cur < cfg.TMAX
-        t_next = min(t_cur + cfg.T_block, cfg.TMAX)
-        saveat = t_cur:cfg.save_every*cfg.DT:t_next
-
-        Qb, Vb, Tb, _, _ = FPUTFastRunner.solve_fput(sp, q_cur, v_cur,
-                                                       (t_cur, t_next), cfg.DT;
-                                                       saveat=saveat)
-
-        # Escalar tiempo a ciclos del modo de referencia (misma convención que compute_trajectories)
-        Tb = Tb .* freq[target_mode_idx] ./ (2π)
-
-        # Normalizar forma: garantizar N × nt
-        Qmat = size(Qb,1) == cfg.N ? Float64.(Qb) : Float64.(Qb')
-        Vmat = size(Vb,1) == cfg.N ? Float64.(Vb) : Float64.(Vb')
-
-        modal_Eb = FPUTAnalysis.compute_modal_energies(Qmat, Vmat, freq, V, m)
-
-        # Detección de inestabilidad: la energía total no debe alejarse >100× del valor inicial
+    on_block = (modal_Eb, idx_ds) -> begin
+        push!(E_ac_blocks,  vec(sum(modal_Eb[k_ac,  idx_ds], dims=1)))
+        push!(E_opt_blocks, vec(sum(modal_Eb[k_opt, idx_ds], dims=1)))
+    end
+    # Detección de inestabilidad: la energía total no debe alejarse >100× del valor inicial
+    check_instability = modal_Eb -> begin
         E_cur = sum(modal_Eb[:, end])
-        if E_cur > 100 * cfg.E_total || isnan(E_cur) || isinf(E_cur)
-            println("  $label INESTABILIDAD detectada (E=$(round(E_cur; sigdigits=3)) >> E_total=$(cfg.E_total)). Abortando.")
-            return nothing
-        end
-
-        # Diagnóstico interbanda: suma de energía por banda en cada instante
-        E_ac_b  = vec(sum(modal_Eb[k_ac,  :], dims=1))
-        E_opt_b = vec(sum(modal_Eb[k_opt, :], dims=1))
-
-        # Append evitando duplicado en frontera de bloque
-        if !isempty(T_total) && !isempty(Tb) && isapprox(T_total[end], Tb[1]; atol=1e-12, rtol=0)
-            if length(Tb) > 1
-                idx_ds = 2:cfg.downsample:length(Tb)
-                append!(T_total, Float64.(Tb[idx_ds]))
-                blk = Float64.(modal_Eb[:, idx_ds])
-                size(blk,2) > 0 && push!(modal_E_blocks, blk)
-                push!(E_ac_blocks,  Float64.(E_ac_b[idx_ds]))
-                push!(E_opt_blocks, Float64.(E_opt_b[idx_ds]))
-            end
-        else
-            idx_ds = 1:cfg.downsample:length(Tb)
-            append!(T_total, Float64.(Tb[idx_ds]))
-            blk = Float64.(modal_Eb[:, idx_ds])
-            size(blk,2) > 0 && push!(modal_E_blocks, blk)
-            push!(E_ac_blocks,  Float64.(E_ac_b[idx_ds]))
-            push!(E_opt_blocks, Float64.(E_opt_b[idx_ds]))
-        end
-
-        q_cur .= Qmat[:, end]
-        v_cur .= Vmat[:, end]
-        t_cur  = t_next
-        cfg.debug && println("  $label t=$(round(t_cur; digits=2)) / $(cfg.TMAX)")
+        unstable = E_cur > 100 * cfg.E_total || isnan(E_cur) || isinf(E_cur)
+        unstable && println("  $label INESTABILIDAD detectada (E=$(round(E_cur; sigdigits=3)) >> E_total=$(cfg.E_total)). Abortando.")
+        unstable
     end
 
-    modal_E = isempty(modal_E_blocks) ? zeros(cfg.N, 0) : reduce(hcat, modal_E_blocks)
-    entropy = FPUTAnalysis.spectral_entropy(modal_E, cfg.entropy_delta)
+    result = integrate_in_blocks(sp, q0, v0, cfg.N, freq, V, m, target_mode_idx;
+                                  TMAX=cfg.TMAX, T_block=cfg.T_block, DT=cfg.DT,
+                                  save_every=cfg.save_every, downsample=cfg.downsample,
+                                  debug=cfg.debug, label=label,
+                                  on_block=on_block, check_instability=check_instability)
+
+    result.aborted && return nothing
+
+    entropy = FPUTAnalysis.spectral_entropy(result.modal_E, cfg.entropy_delta)
     E_ac    = isempty(E_ac_blocks)  ? Float64[] : reduce(vcat, E_ac_blocks)
     E_opt   = isempty(E_opt_blocks) ? Float64[] : reduce(vcat, E_opt_blocks)
-    return (scaled_t=T_total, modal_E=modal_E, entropy=entropy, E_acoustic=E_ac, E_optical=E_opt)
+    return (scaled_t=result.scaled_t, modal_E=result.modal_E, entropy=entropy,
+            E_acoustic=E_ac, E_optical=E_opt)
 end
 
 # ── Tiempo de termalización (Opción A: umbral por realización) ────────────────

@@ -22,8 +22,8 @@ Notas de método (importan, se midieron mal la primera vez):
 """
 
 using LinearAlgebra, Printf, Statistics, Random
-include("../src/fput_core.jl");        using .FPUTCore
-include("../src/fput_fast_runner.jl"); using .FPUTFastRunner
+include("../../src/fput_core.jl");        using .FPUTCore
+include("../../src/fput_fast_runner.jl"); using .FPUTFastRunner
 
 const T_PROBE = 2000.0      # ≥2000: por debajo, la compilación domina
 const N_REPS  = 3

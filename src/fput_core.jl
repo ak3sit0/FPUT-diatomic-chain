@@ -1,8 +1,9 @@
 module FPUTCore
 
-using LinearAlgebra
+using LinearAlgebra, Random
 
-export SystemParams, make_system, fput_forces!, find_normal_modes, bond_potential
+export SystemParams, make_system, fput_forces!, find_normal_modes, bond_potential,
+       derive_band_indices, band_phase_ic
 
 # ── Layer 1: Domain types (SICP: Data Abstraction) ──
 struct SystemParams
@@ -138,6 +139,98 @@ function find_normal_modes(k, m, boundary)
     # general dense eigen(), and guarantees real eigenvalues (no real.() needed).
     λ, V = eigen(Symmetric(D))
     return sqrt.(max.(0.0, λ)), V   # max avoids sqrt of tiny negative λ from rounding
+end
+
+# ── Layer 5: Band-selective initial conditions ──
+
+"""
+    derive_band_indices(branch, N, freq, boundary; k_band_start, k_band_end)
+
+Devuelve Vector{Int} (1-based) de los índices de modo para la rama solicitada.
+`freq` debe estar ordenado en forma ascendente antes de llamar esta función.
+Si k_band_start/k_band_end están presentes, los usa directamente (override manual).
+"""
+function derive_band_indices(branch::String, N::Int, freq::Vector{Float64},
+                              boundary::Symbol;
+                              k_band_start::Union{Int,Nothing}=nothing,
+                              k_band_end::Union{Int,Nothing}=nothing)
+    if !isnothing(k_band_start) && !isnothing(k_band_end)
+        return collect(k_band_start:k_band_end)
+    end
+
+    if boundary == :periodic
+        isodd(N) && error("La cadena diatómica con PBC exige N par (resortes alternados); N=$N")
+
+        # El gap acústico/óptico está ESTRUCTURALMENTE en N/2: N/2 modos por rama.
+        # NO se detecta con argmax(diff(freq)): a N pequeño y Δκ pequeño el espaciado
+        # intrabanda (~1/N) supera al gap (~Δκ) y argmax cae dentro de la rama acústica.
+        # Medido: N=32 Δκ=0.10 daba gap_idx=3 (banda 2:3 en vez de 2:16); N=64 Δκ=0.05
+        # también fallaba. A partir de N≥128 argmax acierta, pero no hace falta confiar
+        # en él habiendo una respuesta exacta.
+        gap_idx = N ÷ 2
+
+        # El argmax se conserva sólo como diagnóstico.
+        argmax_idx = argmax(diff(freq)[2:end]) + 1
+        if argmax_idx != gap_idx
+            @warn "Gap por argmax ($argmax_idx) ≠ estructural ($gap_idx): el espaciado " *
+                  "intrabanda supera al gap. Se usa el estructural (N/2)." N branch
+        end
+
+        branch == "acoustic" && return collect(2:gap_idx)   # excluye traslación (ω≈0)
+        branch == "optical"  && return collect(gap_idx+1:N)
+        error("branch debe ser 'acoustic' o 'optical', recibido: '$branch'")
+    else  # :fixed
+        branch == "acoustic" && return collect(1:N)
+        error("Frontera fija no tiene rama óptica distinguible")
+    end
+end
+
+"""
+    band_phase_ic(k_band, E_total, N, freq, V, m, seed) -> (q0, v0)
+
+Condición inicial de banda selectiva con fases aleatorias uniformes.
+
+Energía E_total distribuida uniformemente sobre los modos en k_band:
+  E_j = E_total / length(k_band)  para j ∈ k_band
+  Q_j =  sqrt(2·E_j) / ω_j · cos(φ_j),  P_j = -sqrt(2·E_j) · sin(φ_j)
+  q = (1/√m) · V · Q,   v = (1/√m) · V · P
+
+Validación post-construcción con @assert (precisión de máquina).
+"""
+function band_phase_ic(k_band::AbstractVector{Int}, E_total::Float64, N::Int,
+                       freq::Vector{Float64}, V::Matrix{Float64},
+                       m::Vector{Float64}, seed::Int)
+    rng    = Random.Xoshiro(seed)
+    E_per  = E_total / length(k_band)
+    Q      = zeros(N)
+    P      = zeros(N)
+
+    for j in k_band
+        freq[j] < 1e-10 && continue   # modo de Goldstone (traslación, ω≈0)
+        φ    = rand(rng) * 2π
+        A    = sqrt(2 * E_per)
+        Q[j] =  A / freq[j] * cos(φ)
+        P[j] = -A            * sin(φ)
+    end
+
+    inv_sqrt_m = 1.0 ./ sqrt.(m)
+    q0 = (V * Q) .* inv_sqrt_m
+    v0 = (V * P) .* inv_sqrt_m
+
+    # Proyectar de vuelta para verificar
+    x        = sqrt.(m) .* q0
+    vx       = sqrt.(m) .* v0
+    Q_check  = V' * x
+    P_check  = V' * vx
+    E_check  = 0.5 .* (P_check.^2 .+ (freq.^2) .* Q_check.^2)
+    E_out    = sum(E_check[setdiff(1:N, k_band)])
+    E_in     = sum(E_check[k_band])
+    tol      = 1e-8 * E_total
+
+    @assert E_out < tol        "Fuga de energía fuera de banda: E_out=$(E_out) (tol=$(tol))"
+    @assert abs(E_in - E_total) < tol "Normalización incorrecta: E_in=$(E_in) vs E_total=$(E_total)"
+
+    return q0, v0
 end
 
 end # module FPUTCore

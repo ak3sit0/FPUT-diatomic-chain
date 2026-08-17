@@ -13,7 +13,7 @@ Usage:
 
 using JLD2, Plots, LaTeXStrings, Statistics
 import Plots: mm
-include("../src/fput_analysis.jl"); using .FPUTAnalysis
+include("../../src/fput_analysis.jl"); using .FPUTAnalysis
 
 const SMOOTH_DELTA = 0.6
 const EPS          = 1e-18

@@ -29,7 +29,7 @@ que ppn > nΔκ no aporta nada.
 """
 
 using TOML, Printf
-include("../src/fput_core.jl"); using .FPUTCore
+include("../../src/fput_core.jl"); using .FPUTCore
 
 const CONTENTION = 1.7   # medido: 4 casos concurrentes vs 1 aislado
 

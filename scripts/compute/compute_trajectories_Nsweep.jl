@@ -10,9 +10,10 @@ Usage:
 
 using TOML, JLD2, Dates, Statistics, LinearAlgebra
 using Base.Threads
-include("../src/fput_core.jl");   using .FPUTCore
-include("../src/fput_fast_runner.jl"); using .FPUTFastRunner
-include("../src/fput_analysis.jl");    using .FPUTAnalysis
+include("../../src/fput_core.jl");   using .FPUTCore
+include("../../src/fput_fast_runner.jl"); using .FPUTFastRunner
+include("../../src/fput_analysis.jl");    using .FPUTAnalysis
+include("../../src/block_integration.jl"); using .BlockIntegration
 
 function load_config(path::String)
     d = TOML.parsefile(path)
@@ -59,76 +60,16 @@ function run_for_N(idx::Int, N::Int, pval::Float64, delta::Float64, cfg)
     U = Diagonal(1 ./ sqrt.(m)) * V
     q_cur .= amplitude .* U[:, target_mode]
 
-    # accumulators
-    T_total = Float64[]
-    # collect blocks of modal energies to avoid repeated hcat allocations
-    modal_E_blocks = Vector{Matrix{Float64}}()
-    t_cur = 0.0
+    result = integrate_in_blocks(sp, q_cur, v_cur, N, freq, V, m, target_mode;
+                                  TMAX=cfg.TMAX, T_block=cfg.T_block, DT=cfg.DT,
+                                  save_every=cfg.save_every, downsample=cfg.downsample,
+                                  debug=true, label="N-sweep $idx")
 
-    while t_cur < cfg.TMAX
-        t_next = min(t_cur + cfg.T_block, cfg.TMAX)
-        saveat = t_cur:cfg.save_every*cfg.DT:t_next
+    println("[N-sweep $idx] Done; times=$(length(result.scaled_t)) steps")
 
-        Qb, Vb, Tb, kvec, mvec = FPUTFastRunner.solve_fput(sp, q_cur, v_cur, (t_cur, t_next), cfg.DT; saveat=saveat)
+    entropy = FPUTAnalysis.spectral_entropy(result.modal_E, cfg.entropy_delta)
 
-        # Transform time to cycles using acoustic mode
-        Tb = Tb .* freq[target_mode] ./ (2π)
-
-        # Normalize shapes
-        if size(Qb,1) == N && size(Qb,2) >= 1
-            Qmat = Float64.(Qb)
-            Vmat = Float64.(Vb)
-        elseif size(Qb,2) == N && size(Qb,1) >= 1
-            Qmat = Float64.(Qb')
-            Vmat = Float64.(Vb')
-        else
-            error("Unexpected Q/V shape: Q=$(size(Qb)), V=$(size(Vb))")
-        end
-
-        modal_Eb = FPUTAnalysis.compute_modal_energies(Qmat, Vmat, freq, V, m)
-
-        # Append times avoiding duplicate at boundary and applying downsample
-        if !isempty(T_total) && !isempty(Tb) && isapprox(T_total[end], Tb[1]; atol=1e-12, rtol=0)
-            if length(Tb) > 1
-                    idx_ds = 2:cfg.downsample:length(Tb)
-                    append!(T_total, Float64.(Tb[idx_ds]))
-                    block = Float64.(modal_Eb[:, idx_ds])
-                    if size(block, 2) > 0
-                        push!(modal_E_blocks, block)
-                    end
-            end
-        else
-            idx_ds = 1:cfg.downsample:length(Tb)
-            append!(T_total, Float64.(Tb[idx_ds]))
-            block = Float64.(modal_Eb[:, idx_ds])
-            if size(block, 2) > 0
-                push!(modal_E_blocks, block)
-            end
-        end
-
-        # update state
-        if size(Qmat, 2) >= 1
-            q_cur .= Qmat[:, end]
-            v_cur .= Vmat[:, end]
-        end
-
-        t_cur = t_next
-        println("[N-sweep $idx] progress: t=$(round(t_cur; digits=3)) / $(cfg.TMAX)")
-    end
-
-    println("[N-sweep $idx] Done; times=$(length(T_total)) steps")
-
-    # Combine blocks once to avoid repeated allocations. If no blocks, produce empty matrix.
-    if isempty(modal_E_blocks)
-        modal_E_total = Array{Float64}(undef, N, 0)
-    else
-        modal_E_total = reduce(hcat, modal_E_blocks)
-    end
-
-    # Compute entropy
-    entropy = FPUTAnalysis.spectral_entropy(modal_E_total, cfg.entropy_delta)
-
-    return (N=N, param=pval, Delta=delta, scaled_t=T_total, modal_E=modal_E_total, entropy=entropy)
+    return (N=N, param=pval, Delta=delta, scaled_t=result.scaled_t, modal_E=result.modal_E, entropy=entropy)
 end
 
 function main()

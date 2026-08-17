@@ -10,9 +10,10 @@ Usage:
 """
 
 using TOML, JLD2, Dates, Base.Threads, Statistics, LinearAlgebra
-include("../src/fput_core.jl");   using .FPUTCore
-include("../src/fput_fast_runner.jl"); using .FPUTFastRunner
-include("../src/fput_analysis.jl");    using .FPUTAnalysis
+include("../../src/fput_core.jl");   using .FPUTCore
+include("../../src/fput_fast_runner.jl"); using .FPUTFastRunner
+include("../../src/fput_analysis.jl");    using .FPUTAnalysis
+include("../../src/block_integration.jl"); using .BlockIntegration
 
 function build_config(path::String)
     d = TOML.parsefile(path)
@@ -63,78 +64,14 @@ function run_case(idx, pval, delta, cfg)
     U = Diagonal(1 ./ sqrt.(m)) * V
     q_cur .= amplitude .* U[:, target_mode]
 
-    # Prepare accumulators
-    T_total = Float64[]
-    # collect blocks of modal energies to avoid repeated hcat allocations
-    modal_E_blocks = Vector{Matrix{Float64}}()
-    t_cur = 0.0
+    result = integrate_in_blocks(sp, q_cur, v_cur, cfg.N, freq, V, m, target_mode;
+                                  TMAX=cfg.TMAX, T_block=cfg.T_block, DT=cfg.DT,
+                                  save_every=cfg.save_every, downsample=cfg.downsample,
+                                  debug=true, label="case $idx")
 
-    # Integrate in blocks so we can print progress like the recovery script
-    while t_cur < cfg.TMAX
-        t_next = min(t_cur + cfg.T_block, cfg.TMAX)
-        saveat = t_cur:cfg.save_every*cfg.DT:t_next
+    println("[case $idx] Done; times=$(length(result.scaled_t)) steps")
 
-        Qb, Vb, Tb, kvec, mvec = FPUTFastRunner.solve_fput(sp, q_cur, v_cur, (t_cur, t_next), cfg.DT; saveat=saveat)
-
-        # Transform time to cycles of oscillation (normalized by acoustic mode frequency)
-        Tb = Tb .* freq[target_mode] ./ (2π)
-
-        # Normalize shapes: ensure Qmat, Vmat are (N × nt)
-        if size(Qb,1) == cfg.N && size(Qb,2) >= 1
-            Qmat = Float64.(Qb)
-            Vmat = Float64.(Vb)
-        elseif size(Qb,2) == cfg.N && size(Qb,1) >= 1
-            Qmat = Float64.(Qb')
-            Vmat = Float64.(Vb')
-        else
-            error("Unexpected Q/V shape: Q=$(size(Qb)), V=$(size(Vb))")
-        end
-
-        # Compute modal energies for this block (modal_Eb is N × nt)
-        modal_Eb = FPUTAnalysis.compute_modal_energies(Qmat, Vmat, freq, V, m)
-
-        # Append times avoiding duplicate at boundary
-        if !isempty(T_total) && !isempty(Tb) && isapprox(T_total[end], Tb[1]; atol=1e-12, rtol=0)
-            # drop the duplicated first column and apply downsample
-                if length(Tb) > 1
-                idx_ds = 2:cfg.downsample:length(Tb)
-                append!(T_total, Float64.(Tb[idx_ds]))
-                block = Float64.(modal_Eb[:, idx_ds])
-                if size(block,2) > 0
-                    push!(modal_E_blocks, block)
-                end
-            end
-        else
-            # initial or non-overlapping: apply downsample
-            idx_ds = 1:cfg.downsample:length(Tb)
-            append!(T_total, Float64.(Tb[idx_ds]))
-            block = Float64.(modal_Eb[:, idx_ds])
-            if size(block,2) > 0
-                push!(modal_E_blocks, block)
-            end
-        end
-
-        # Update current state to last sample for next block
-        if size(Qmat, 2) >= 1
-            q_cur .= Qmat[:, end]
-            v_cur .= Vmat[:, end]
-        end
-
-        t_cur = t_next
-        println("[case $idx] progress: t=$(round(t_cur; digits=3)) / $(cfg.TMAX)")
-    end
-
-    
-
-    println("[case $idx] Done; times=$(length(T_total)) steps")
-
-    if isempty(modal_E_blocks)
-        modal_E_total = Array{Float64}(undef, cfg.N, 0)
-    else
-        modal_E_total = reduce(hcat, modal_E_blocks)
-    end
-
-    return (param=pval, Delta=delta, scaled_t=T_total, modal_E=modal_E_total)
+    return (param=pval, Delta=delta, scaled_t=result.scaled_t, modal_E=result.modal_E)
 end
 
 function main()

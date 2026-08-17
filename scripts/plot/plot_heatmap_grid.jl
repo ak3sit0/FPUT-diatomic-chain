@@ -10,7 +10,7 @@ Usage:
 """
 
 using CairoMakie, JLD2, LaTeXStrings, Colors
-include("../src/config.jl"); using Main.Config
+include("../../src/config.jl"); using Main.Config
 
 function build_plot_config(input_arg::Union{String,Nothing} = nothing)
     if isnothing(input_arg)

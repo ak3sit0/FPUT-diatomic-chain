@@ -25,7 +25,7 @@ hpc/
 
 Workflow: `generate_*.jl` → `qsub` → `check_hpc_status.jl` → `compute_ensemble*.jl` output.
 
-⚠️ **Nota de mantenimiento**: Los dos generadores no son interoperables (naming/regex diverge). Ver `docs/` para detalles.
+`check_hpc_status.jl` descubre jobs directamente desde `jobs/*.pbs` (no asume naming ni N_values fijo), así que funciona con ambos generadores indistintamente.
 
 ## plot/ — Visualización
 
@@ -43,6 +43,6 @@ plot/
 
 ## Notas de desarrollo
 
-- Muchos scripts heredan include-paths de su ubicación anterior en `scripts/`. Si después de reorganizar algún script no corre, revisar líneas con `include("...")` — probablemente necesite un `cd` al directorio anterior o rutas absolutas `joinpath(@__DIR__, ...)`.
 - Los scripts de `plot/` que usan `results/figures/...` asumen ejecución desde la raíz del proyecto (`julia --project=. scripts/plot/plot_*.jl`).
-- Ver `docs/` para diagnósticos conocidos (duplicación código, HPC workflow breaks, física).
+- `derive_band_indices`/`band_phase_ic` viven en `FPUTCore` (`src/fput_core.jl`); el loop de integración por bloques (usado en los 4 scripts `compute_*.jl`) vive en `BlockIntegration.integrate_in_blocks` (`src/block_integration.jl`).
+- Ver `docs/` para diagnósticos conocidos (duplicación código restante, backend de plotting, física).

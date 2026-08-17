@@ -66,3 +66,25 @@ Mismo problema de fondo, con más superficie:
 - Punto positivo: el patrón `colors[i]` sin `mod1` (el bug de `plot_dispersion_relation.jl`) **no** aparece en `scripts/` — `plot_entropy_param_sweep.jl` y `plot_ftmle.jl` ya usan `mod1` correctamente.
 
 La recomendación de "unificar a un solo backend + centralizar paletas en `src/plotting_utils.jl`" aplica igual aquí, y cubriría examples/ y scripts/ a la vez.
+
+## Pendiente (no implementado en esta pasada)
+
+Reorganización de `scripts/` (compute/hpc/plot) y fixes de baja severidad + Fase 1/2 (HPC workflow,
+`derive_band_indices`/`band_phase_ic` y el loop de integración por bloques centralizados en `src/`)
+ya están hechos. Quedan pendientes, deliberadamente pospuestos:
+
+- **`compute_entropy`/`prepare_ts`/`build_fig` duplicados byte-a-byte** entre `plot_entropy_paper.jl`
+  y `plot_entropy_pbc_complete.jl`, y ambos reimplementan matemática que ya vive en
+  `FPUTAnalysis.spectral_entropy` (`src/fput_analysis.jl`) en vez de llamarla. Requiere decidir si
+  `spectral_entropy` (que opera sobre matrices densas `modal_E`) es compatible con el flujo de estos
+  dos scripts (que trabajan con `Dict{Float64,Any}` cargado de JLD2) antes de unificar — no es un
+  simple copy-paste-delete.
+- **Paletas** (`BLUES_GRADIENT` duplicado en `plot_ensemble_results.jl`/`plot_heatmap_grid.jl`,
+  `SPEC_FBC`/`SPEC_PBC`/`SPEC_PBC_COMPLETE`, `PALETTE`/`LINESTYLES` de `plot_ftmle.jl`) — mover a un
+  único `src/plotting_utils.jl`. Bajo riesgo pero toca 6 archivos de plotting.
+- **Fase 3 — Unificación de backend**: migrar los 4 scripts que usan Plots.jl
+  (`plot_entropy_paper.jl`, `plot_entropy_param_sweep.jl`, `plot_entropy_pbc_complete.jl`,
+  `plot_ftmle.jl`) a CairoMakie (o viceversa), para que las figuras del mismo paper salgan de un solo
+  stack. Es trabajo de reescritura real (recipes de `contour`/`plot!` no son 1:1 entre backends), no
+  solo mover código — más invasivo que todo lo anterior. Dejarlo para cuando haya tiempo dedicado a
+  revisar visualmente cada figura regenerada.

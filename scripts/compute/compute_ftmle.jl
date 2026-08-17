@@ -14,8 +14,8 @@ Usage:
 
 using TOML, JLD2, LinearAlgebra, Random, Dates
 
-include("../src/fput_core.jl");        using .FPUTCore
-include("../src/fput_fast_runner.jl"); using .FPUTFastRunner
+include("../../src/fput_core.jl");        using .FPUTCore
+include("../../src/fput_fast_runner.jl"); using .FPUTFastRunner
 
 # ── Lectura del config ──────────────────────────────────────────────────────
 

@@ -19,7 +19,7 @@ Output:
 
 using TOML
 using Dates: today
-include("../src/fput_core.jl"); using .FPUTCore
+include("../../src/fput_core.jl"); using .FPUTCore
 
 """
     tmax_for_N(cfg, N) -> TMAX
@@ -115,8 +115,6 @@ function write_job_files(base_toml::Dict, N::Int, output_dir::String)
         println(io, "#PBS -l walltime=$(walltime)")
         println(io, "#PBS -o $(log_file)")
         println(io, "#PBS -j oe")
-        println(io)
-        println(io, "set -e  # Salir si hay error")
         println(io)
         println(io, "cd \$PBS_O_WORKDIR")
         println(io, "mkdir -p results/logs results/data")
