@@ -5,7 +5,7 @@ Barrido sobre N_values definido en un TOML. Guarda un JLD2 con entradas
 por cada N: (N, scaled_t, modal_E, entropy).
 
 Usage:
-  julia --project=. scripts/compute_trajectories_Nsweep.jl configs/templates/sweep_N_acoustic.toml
+  julia --project=. scripts/compute_trajectories_Nsweep.jl configs/tests/quick_smoke_test.toml
 """
 
 using TOML, JLD2, Dates, Statistics, LinearAlgebra

@@ -5,7 +5,7 @@ Genera un .toml + .pbs por cada N de un barrido nsweep, con el walltime DERIVADO
 del modelo de coste medido en lugar de estimado a ojo.
 
 Uso:
-  julia --project=. scripts/generate_pbs_nsweep.jl configs/cases/nsweep_rise_N256.toml
+  julia --project=. scripts/generate_pbs_nsweep.jl configs/production/nsweep_rise_N256.toml
   julia --project=. scripts/generate_pbs_nsweep.jl <config> --ns-per-step-site=95 --safety=2.5
 
 Opciones:

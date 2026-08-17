@@ -26,8 +26,10 @@ The production workflows are meant to run on **HPC with PBS/Torque**; see
 ├── scripts/                # Compute and figure pipelines (production)
 ├── examples/               # Theoretical calculations and exploratory figures
 ├── configs/
-│   ├── cases/              # Concrete run configurations
-│   └── templates/          # Parameterizable templates
+│   ├── production/         # Concrete run configurations (cases)
+│   ├── hpc_templates/      # Parameterizable templates for job generation
+│   └── tests/              # Smoke tests and quick test configs
+├── docs/                   # Supplementary documentation
 ├── jobs/                   # Generated HPC jobs (.toml versioned, .pbs ignored)
 ├── results/                # Outputs (mostly git-ignored)
 │   ├── data/               # Simulation .jld2 files
@@ -123,37 +125,37 @@ julia --project=. -e 'import Pkg; Pkg.instantiate()'
 ### Trajectory simulation
 
 ```bash
-julia --project=. scripts/compute_trajectories.jl configs/cases/periodic_N64_production.toml
+julia --project=. scripts/compute/compute_trajectories.jl configs/production/periodic_N64.toml
 ```
 
 ### Phase ensemble (production)
 
 ```bash
-julia --project=. -t 8 scripts/compute_ensemble.jl configs/cases/ensemble_production.toml
-julia --project=. scripts/plot_ensemble_results.jl results/data/ensemble_production_100real/ensemble_results_YYYY-MM-DD.jld2
+julia --project=. -t 8 scripts/compute/compute_ensemble.jl configs/production/ensemble.toml
+julia --project=. scripts/plot/plot_ensemble_results.jl results/data/ensemble_production_100real/ensemble_results_YYYY-MM-DD.jld2
 ```
 
 ### Lyapunov exponent (ftMLE)
 
 ```bash
 # config.toml, T_max, T_renorm, comma-separated Δκ list
-julia --project=. -t 4 scripts/compute_ftmle.jl configs/cases/periodic_N64_production.toml 1e7 200.0 0.1,0.5
-julia --project=. scripts/plot_ftmle.jl results/data/ftmle/ftmle_periodic_delta0p1_YYYY-MM-DD.jld2
+julia --project=. -t 4 scripts/compute/compute_ftmle.jl configs/production/periodic_N64.toml 1e7 200.0 0.1,0.5
+julia --project=. scripts/plot/plot_ftmle.jl results/data/ftmle/ftmle_periodic_delta0p1_YYYY-MM-DD.jld2
 ```
 
 ### Paper figures
 
 ```bash
-julia --project=. scripts/plot_entropy_paper.jl <fbc.jld2> <pbc.jld2>
-julia --project=. scripts/plot_entropy_pbc_complete.jl <pbc_0p05-0p7.jld2> <pbc_delta09.jld2>
+julia --project=. scripts/plot/plot_entropy_paper.jl <fbc.jld2> <pbc.jld2>
+julia --project=. scripts/plot/plot_entropy_pbc_complete.jl <pbc_0p05-0p7.jld2> <pbc_delta09.jld2>
 ```
 
 ### Multi-N HPC workflow (PBS/TORQUE)
 
 ```bash
-julia --project=. scripts/generate_hpc_jobs.jl configs/templates/ensemble_N_sweep.toml
+julia --project=. scripts/hpc/generate_hpc_jobs.jl configs/hpc_templates/ensemble_N_sweep.toml
 for job in jobs/ensemble_N*.pbs; do qsub $job; done
-julia --project=. scripts/check_hpc_status.jl
+julia --project=. scripts/hpc/check_hpc_status.jl
 ```
 
 
@@ -161,7 +163,7 @@ julia --project=. scripts/check_hpc_status.jl
 
 ## Configuration
 
-The simulation TOMLs (`configs/cases/`, `configs/templates/`) have three sections:
+The simulation TOMLs (`configs/production/`, `configs/hpc_templates/`, `configs/tests/`) have three sections:
 
 ```toml
 [experiment]
@@ -203,9 +205,7 @@ read `init_type` (`"mode"` or `"band_ensemble"`), whereas `compute_trajectories.
 `E_total = N · energy_density`; if it only defines `initial_energy`, then
 `E_total = initial_energy` (legacy behavior).
 
-The plotting TOMLs (e.g. [configs/templates/plot_entropy_alpha_periodic.toml](configs/templates/plot_entropy_alpha_periodic.toml))
-use the sections `[data]`, `[analysis]`, `[plot]`, `[filter]`, `[heatmap]`, `[output]`,
-parsed by `Config.load_plot_config`.
+Plotting scripts are generally hardcoded; plotting TOMLs are deprecated.
 
 ---
 

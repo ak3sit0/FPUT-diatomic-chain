@@ -163,7 +163,7 @@ function save_result(cfg, toml_path, delta_k, T_max, t_vec, lambda_vec, omega_re
 end
 
 function main()
-    toml_path = get(ARGS, 1, "configs/cases/periodic_N64_production.toml")
+    toml_path = get(ARGS, 1, "configs/production/periodic_N64.toml")
     T_max     = parse(Float64, get(ARGS, 2, "10000000.0"))
     T_renorm  = parse(Float64, get(ARGS, 3, "200.0"))
 

@@ -5,7 +5,7 @@ Barrido en delta_values con ensamble de fases por banda selectiva.
 Hereda el patrón de bloques temporales de compute_trajectories.jl.
 
 Usage:
-  julia --project=. scripts/compute_ensemble.jl configs/cases/ensemble_production.toml
+  julia --project=. scripts/compute_ensemble.jl configs/production/ensemble.toml
 
 Convención de energía:
   Si el TOML tiene `energy_density`, E_total = N * energy_density  (nueva).

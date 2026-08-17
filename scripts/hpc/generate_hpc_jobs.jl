@@ -10,7 +10,7 @@ Ventajas:
   - Workflow offline: generar → revisar → qsub
 
 Usage:
-  julia --project=. scripts/generate_hpc_jobs.jl configs/templates/ensemble_N_sweep.toml
+  julia --project=. scripts/generate_hpc_jobs.jl configs/hpc_templates/ensemble_N_sweep.toml
 
 Output:
   - jobs/ensemble_N<N>.toml (config mutada)
@@ -170,7 +170,7 @@ end
 function main()
     if isempty(ARGS)
         println("Usage: julia scripts/generate_hpc_jobs.jl <config_template.toml>")
-        println("Example: julia scripts/generate_hpc_jobs.jl configs/templates/ensemble_N_sweep.toml")
+        println("Example: julia scripts/generate_hpc_jobs.jl configs/hpc_templates/ensemble_N_sweep.toml")
         return
     end
 
