@@ -1,140 +1,101 @@
 """
     plot_ftmle.jl
 
-Figura de un panel: λ(t) en escala log-log + ley de potencias ajustada t^{-δ}.
-El ajuste se hace sobre el 50% central de la curva del caso Δκ=0.1 (representativo).
-
-Soporta uno o varios archivos JLD2 de ftMLE superpuestos.
-Cada caso recibe un color y estilo de línea distintos.
+Single-panel figure: λ(t) in log-log, one curve per input file, plus a fitted
+power law t^{-δ} over the reference case (Δκ = `DELTA_REF`), fit on the central
+50% of that curve.
 
 Usage:
-  julia --project=. scripts/plot_ftmle.jl <ftmle1.jld2> [ftmle2.jld2 ...]
+  julia --project=. scripts/plot/plot_ftmle.jl <ftmle1.jld2> [ftmle2.jld2 ...]
 """
 
-using JLD2, Plots, LaTeXStrings, Statistics, Dates
-import Plots: mm
+using JLD2, LaTeXStrings, Statistics, Dates
 include("../../src/fput_analysis.jl");  using .FPUTAnalysis
 include("../../src/plotting_utils.jl"); using .PlottingUtils
+include("../../src/plot_style.jl");     using .PlotStyle
 
-function apply_global_plot_style!()
-    default(titlefont = font(16), guidefont = font(14),
-            tickfont  = font(11), legendfont = font(12))
-end
-
-function downsample(v, n_max)
-    n = length(v)
-    n <= n_max && return v, 1:n
-    step = ceil(Int, n / n_max)
-    idx  = 1:step:n
-    return v[idx], idx
-end
+const USAGE = "Usage: julia --project=. scripts/plot/plot_ftmle.jl <ftmle1.jld2> [ftmle2.jld2 ...]"
+const DELTA_REF = 0.05   # case the power-law reference is fit on
 
 """
-    fit_powerlaw(t, lam; t_max, n_bins) -> (c, δ)
+    fit_powerlaw(t, lam; t_max=1e4, n_bins=20) -> (c, δ)
 
-Binning logarítmico + regresión lineal en log-log.
-Divide [t[1], t_max] en n_bins bins de igual ancho en log(t),
-promedia λ dentro de cada bin, y ajusta sobre las medias de bin.
-Cada década pesa igual independientemente de la densidad de puntos.
+Log-binned linear regression in log-log: split `[t[1], t_max]` into `n_bins`
+equal-width bins in `log(t)`, average λ within each, fit on the bin means. Every
+decade weighs equally regardless of point density.
 """
 function fit_powerlaw(t, lam; t_max=1e4, n_bins=20)
     mask = (t .<= t_max) .& (t .> 0) .& (lam .> 0)
-    t_m  = t[mask]
-    l_m  = lam[mask]
-    isempty(t_m) && error("Sin datos en el rango de ajuste")
+    t_m, l_m = t[mask], lam[mask]
+    isempty(t_m) && error("No data in the fit range")
 
     edges = exp10.(range(log10(t_m[1]), log10(t_max); length=n_bins+1))
-    t_bin = Float64[]; l_bin = Float64[]
+    t_bin, l_bin = Float64[], Float64[]
     for i in 1:n_bins
         idx = findall(s -> edges[i] <= s < edges[i+1], t_m)
         isempty(idx) && continue
-        push!(t_bin, exp(mean(log.(t_m[idx]))))   # media geométrica del bin
-        push!(l_bin, exp(mean(log.(l_m[idx]))))   # media geométrica de λ
+        push!(t_bin, exp(mean(log.(t_m[idx]))))
+        push!(l_bin, exp(mean(log.(l_m[idx]))))
     end
 
-    x  = log.(t_bin); y = log.(l_bin)
-    mx = mean(x);     my = mean(y)
-    slope     = sum((x .- mx) .* (y .- my)) / sum((x .- mx).^2)
-    intercept = my - slope * mx
-    return exp(intercept), -slope
+    x, y = log.(t_bin), log.(l_bin)
+    mx, my = mean(x), mean(y)
+    slope = sum((x .- mx) .* (y .- my)) / sum((x .- mx).^2)
+    exp(my - slope * mx), -slope
 end
 
-const DELTA_REF = 0.05   # caso del que se toma la referencia
+"""One λ(t) curve per file, plus the c·t^{-δ} reference fit on `DELTA_REF`."""
+function ftmle_curves(paths)
+    curves = Curve[]
+    ref = nothing
+    for (k, path) in enumerate(paths)
+        d = load(path)
+        t, lam, delta = Float64.(d["t_cycles"]), Float64.(d["lambda"]), Float64(d["delta_k"])
+        valid = findall(x -> x > 0 && isfinite(x), lam)
+        t, lam = t[valid], lam[valid]
+
+        is_ref = isapprox(delta, DELTA_REF; atol=1e-10)
+        is_ref && (ref = (t[1], t[end], fit_powerlaw(t, lam)...))
+
+        t_ds, l_ds = logdownsample(t, lam)
+        push!(curves, Curve(t_ds, l_ds, latexstring("\\Delta\\kappa = $delta");
+                            cyclic(k; palette = FTMLE_PALETTE, styles = FTMLE_LINESTYLES,
+                                   lw = is_ref ? 3.5 : 1.5)...))
+        println("  ✓ Δκ=$delta ($(length(t)) points)")
+    end
+
+    if !isnothing(ref)
+        t0, t1, c, δ = ref
+        t_fit = exp10.(range(log10(t0), log10(t1); length=400))
+        push!(curves, Curve(t_fit, c .* t_fit .^ (-δ),
+                            latexstring("c\\,t^{-$(round(δ; digits=3))}");
+                            color = :black, linestyle = :solid, linewidth = 2.0))
+        println("Fit (Δκ=$DELTA_REF): c = $(round(c; sigdigits=3))  δ = $(round(δ; digits=4))")
+    end
+    curves
+end
+
+function boundary_tag(paths)
+    tags = unique(get(load(p), "boundary", "periodic") for p in paths)
+    length(tags) == 1 ? tags[1] : "mixed"
+end
 
 function main()
-    if isempty(ARGS)
-        println("Usage: julia scripts/plot_ftmle.jl <ftmle1.jld2> [ftmle2.jld2 ...]")
-        return
-    end
+    isempty(ARGS) && error(USAGE)
+    apply_style!()
 
-    ftmle_paths = ARGS[:]
-    apply_global_plot_style!()
+    fig = logplot(xlabel = L"t\ \mathrm{(cycles)}", ylabel = L"\lambda(t)",
+                  yscale = :log10, legend = :topright,
+                  grid = true, gridalpha = 0.2, gridstyle = :dot,
+                  size = (800, 500))
+    draw!(fig, ftmle_curves(ARGS))
 
-    fig = plot(; xscale=:log10, yscale=:log10,
-                 ylabel     = L"\lambda(t)",
-                 xlabel     = L"t\ \mathrm{(cycles)}",
-                 legend     = :topright,
-                 framestyle = :box,
-                 grid       = true,
-                 gridalpha  = 0.2,
-                 gridstyle  = :dot,
-                 left_margin   = 5mm,
-                 right_margin  = 4mm,
-                 top_margin    = 4mm,
-                 bottom_margin = 6mm,
-                 size          = (800, 500))
-
-    ref_c  = nothing
-    ref_δ  = nothing
-    ref_t0 = nothing
-    ref_t1 = nothing
-
-    for (k, ftmle_path) in enumerate(ftmle_paths)
-        color = cyc(FTMLE_PALETTE, k)
-        ls    = cyc(FTMLE_LINESTYLES, k)
-
-        d_f     = load(ftmle_path)
-        t_cyc   = Float64.(d_f["t_cycles"])
-        lam     = Float64.(d_f["lambda"])
-        delta_k = Float64(d_f["delta_k"])
-
-        valid = findall(x -> x > 0 && isfinite(x), lam)
-        t_lam = t_cyc[valid]
-        l_lam = lam[valid]
-
-        if isapprox(delta_k, DELTA_REF; atol=1e-10)
-            ref_c, ref_δ = fit_powerlaw(t_lam, l_lam)
-            ref_t0 = t_lam[1]
-            ref_t1 = t_lam[end]
-        end
-
-        lw = isapprox(delta_k, DELTA_REF; atol=1e-10) ? 3.5 : 1.5
-        t_lam_ds, idx_l = downsample(t_lam, 3000)
-        plot!(fig, t_lam_ds, l_lam[idx_l];
-            lw=lw, color=color, linestyle=ls,
-            label=latexstring("\\Delta\\kappa = $(delta_k)"))
-    end
-
-    # ── Referencia c·t^{-δ} sobre la segunda mitad ──────────────────────────
-    if !isnothing(ref_c)
-        t_ref   = exp10.(range(log10(ref_t0), log10(ref_t1); length=400))
-        δ_str   = string(round(ref_δ; digits=3))
-        plot!(fig, t_ref, ref_c .* t_ref .^ (-ref_δ);
-            color=:black, linestyle=:solid, lw=2.0,
-            label=latexstring("c\\,t^{-$(δ_str)}"))
-        println("Ajuste (Δκ=$(DELTA_REF)):  c = $(round(ref_c; sigdigits=3))   δ = $(round(ref_δ; digits=4))")
-    end
-
-    figdir = "results/figures/liapunov_exponent"
-    mkpath(figdir)
-    # Detectar boundary: usar el campo del JLD2 si existe, si no asumir "periodic"
-    bc_tags = unique([get(load(p), "boundary", "periodic") for p in ftmle_paths])
-    bc_str  = length(bc_tags) == 1 ? bc_tags[1] : "mixed"
-    tag     = join(replace.(string.(sort(unique(
-                  [Float64(load(p)["delta_k"]) for p in ftmle_paths]))), "." => "p"), "_")
-    outbase = joinpath(figdir, "ftmle_$(bc_str)_delta$(tag)_$(today())")
-    savefig(fig, outbase * ".pdf")
-    println("PDF: $(outbase).pdf")
+    deltas = sort(unique(Float64(load(p)["delta_k"]) for p in ARGS))
+    tag = join(replace.(string.(deltas), "." => "p"), "_")
+    save_fig(fig, "results/figures/liapunov_exponent",
+             "ftmle_$(boundary_tag(ARGS))_delta$(tag)_$(today())"; exts = (".pdf",))
 end
 
-main()
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end

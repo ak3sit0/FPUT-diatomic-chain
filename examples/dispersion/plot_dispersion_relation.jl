@@ -4,18 +4,18 @@ include("../../src/fput_analysis.jl");   using .FPUTAnalysis
 include("../../src/plotting_utils.jl");  using .PlottingUtils
 gr()
 
-# estética común
+# Common style
 default(titlefont=font(16, "Times"), guidefont=font(18, "Times"),
         tickfont=font(16, "Times"), legendfont=font(16, "Times"))
 
-# parámetros del sistema
+# System parameters
 a = 1.0                                    # lattice constant
 m = 1.0                                    # atomic mass
 
 # k‑rangos
 k_reduced = range(0.0, stop=π/a, length=1200)
 
-# Δκ para la dispersión (spring constant disorder)
+# Δκ for the dispersion (spring constant disorder)
 # κ₁ = 1 + Δκ, κ₂ = 1 - Δκ
 Δκ_values_dispersion = [0.1, 0.3, 0.6, 0.9]
 
@@ -37,21 +37,23 @@ function plot_dispersion(Δκ_values::Vector{Float64},
                          k_reduced::AbstractVector,
                          a::Float64, m::Float64)
     freq_data = map(Δκ -> compute_frequencies(Δκ, k_reduced, a, m),
-                    Δκ_values)
+                    Δκ_values) # Mapping on
 
     p = plot(xlabel=L"k", ylabel=L"\omega", legend=:left, grid=true, gridalpha=0.3,
              size=(800, 600), margin=5Plots.mm)
+
     xlims!(p, 0, π/a)
     xticks!(p, [0, π/a/2, π/a],
            [L"0", L"\frac{\pi}{2a}", L"\frac{\pi}{a}"])
 
     max_ω = maximum(vcat([maximum(ω_opt) for (ω_opt, _) in freq_data]...,
                      [maximum(ω_ac)  for (_, ω_ac) in freq_data]...))
+
     ylims!(p, 0, max_ω * 1.05)   # +5% headroom
     
     # Plot data
     for (i, (ω_opt, ω_ac)) in enumerate(freq_data)
-        ls  = cyc(LINESTYLES, i)
+        ls  = cyc(LINESTYLES, i) 
         col = cyc(PALETTE_DELTA, i)
         lw  = cyc(LINEWIDTHS, i)
 

@@ -3,8 +3,8 @@ module PlottingUtils
 using JLD2, Statistics
 using ..FPUTAnalysis
 
-export cyc,
-       PALETTE_DELTA, PALETTE_CATEGORICAL, LINESTYLES, LINEWIDTHS,
+export Curve, cyclic, cyc,
+       PALETTE_DELTA, LINESTYLES, LINEWIDTHS,
        BLUES_STOPS, BLUE_DARK, BLUE_MID, BLUE_LIGHT, GRAY_GUIDE,
        HALO_BLUE, HALO_TEAL, HALO_RED,
        PALETTE_COUPLING, RESONANCE_LINE,
@@ -29,17 +29,17 @@ lookup so adding a curve past the end of a palette wraps instead of throwing.
 
 # ── Palettes ─────────────────────────────────────────────────────────────────
 
-"""Sequential blues for Δκ sweeps (dispersion, resonance level curves)."""
-const PALETTE_DELTA = [:darkblue, :steelblue, :cornflowerblue, :deepskyblue, :lightblue]
+"""
+Δκ sweep palette (dispersion, resonance level curves, entropy sweeps). Blue→red
+divergent rather than sequential blues: at 6-7 Δκ values sequential blues put
+adjacent curves within a few steps of indistinguishable, which is what motivated
+this palette originally in `SPEC_PBC_COMPLETE`.
+"""
+const PALETTE_DELTA = ["#1a3a6b", "#2171b5", "#6baed6", "#b3d9ff",
+                       "#d62728", "#f4845f", "#8b0000"]
 
 const LINESTYLES = [:solid, :dash, :dot, :dashdot, :dashdotdot]
 const LINEWIDTHS = [2.4, 2.9, 3.3, 3.6]
-
-"""
-Categorical palette for sweeps whose curves are unordered labels rather than a
-magnitude (e.g. system size N), where the sequential blues would read as a trend.
-"""
-const PALETTE_CATEGORICAL = [:blue, :red, :green, :orange, :purple, :brown, :magenta]
 
 """Colormap stops for modal-energy heatmaps. Build with `cgrad(BLUES_STOPS)`."""
 const BLUES_STOPS = [:white, "#B2D9FF", "#5999F2", "#3359CC", "#0D4CB3"]
@@ -59,6 +59,39 @@ const GRAY_GUIDE = :gray       # reference hlines
 const HALO_BLUE = (:darkblue, :steelblue)
 const HALO_TEAL = (:steelblue, :lightblue)
 const HALO_RED  = (:darkred, :salmon)
+
+# ── The curve: the seam between "what to plot" and "how it looks" ────────────
+
+"""
+    Curve(x, y, label; color, linestyle=:solid, linewidth=2.0)
+
+One line on a figure. Scripts build a `Vector{Curve}` — that is their whole job —
+and `PlotStyle.draw!` renders it. Plain data, so this module stays free of any
+plotting backend.
+
+`color` has no default on purpose: relying on the backend's implicit colour cycle
+is how curves silently collide once a sweep grows past the palette.
+"""
+struct Curve
+    x::Vector{Float64}
+    y::Vector{Float64}
+    label::AbstractString
+    color::Any
+    linestyle::Symbol
+    linewidth::Float64
+end
+
+Curve(x, y, label; color, linestyle::Symbol = :solid, linewidth::Real = 2.0) =
+    Curve(Float64.(x), Float64.(y), label, color, linestyle, Float64(linewidth))
+
+"""
+    cyclic(i; palette=PALETTE_DELTA, styles=LINESTYLES, lw=2.0)
+
+Style keywords for the `i`-th curve of a sweep, wrapping past the end of either
+palette. Splat straight in: `Curve(t, y, label; cyclic(j)...)`.
+"""
+cyclic(i::Integer; palette = PALETTE_DELTA, styles = LINESTYLES, lw::Real = 2.0) =
+    (color = cyc(palette, i), linestyle = cyc(styles, i), linewidth = Float64(lw))
 
 # ── Entropy-figure specs: (Δκ, color, linestyle, linewidth) ──────────────────
 
@@ -147,13 +180,11 @@ without visibly changing the curve.
 """
 function logdownsample(t, y, n_max::Int=3000)
     length(t) <= n_max && return t, y
-    log_edges = range(log10(t[1]), log10(t[end]); length=n_max + 1)
-    idx = Int[]
-    for i in 1:n_max
-        lo, hi = 10^log_edges[i], 10^log_edges[i+1]
-        j = findfirst(x -> lo <= x < hi, t)
-        isnothing(j) || push!(idx, j)
-    end
+    edges = range(log10(t[1]), log10(t[end]); length=n_max + 1)
+    # t is sorted, so each bin edge is a binary search rather than a scan of the
+    # whole series — the difference between O(n) and O(n·n_max) at 10⁶ points.
+    idx = unique(searchsortedfirst(t, exp10(e)) for e in edges)
+    filter!(<=(length(t)), idx)
     isempty(idx) && return t, y
     t[idx], y[idx]
 end
