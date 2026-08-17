@@ -9,11 +9,12 @@ Usage:
 """
 
 using JLD2, Plots, LaTeXStrings, Statistics, Printf
+include("../../src/fput_analysis.jl");   using .FPUTAnalysis
+include("../../src/plotting_utils.jl");  using .PlottingUtils
 
 gr()
 
 const PLOT_MAX_POINTS = 2000
-const LINESTYLES = [:solid, :dash, :dot, :dashdot, :dashdotdot]
 
 function apply_recovery_style!()
     default(titlefont=font(16), guidefont=font(12), tickfont=font(11), legendfont=font(12))
@@ -33,9 +34,6 @@ function main()
     sort!(results, by=r -> r.N)
 
     apply_recovery_style!()
-
-    # Paleta de colores
-    palette = [:blue, :red, :green, :orange, :purple, :brown, :magenta]
 
     # Crear gráfica
     p = plot(
@@ -78,8 +76,8 @@ function main()
             S = S[idx]
         end
 
-        color = palette[mod1(i, length(palette))]
-        ls = LINESTYLES[mod1(i, length(LINESTYLES))]
+        color = cyc(PALETTE_CATEGORICAL, i)
+        ls    = cyc(LINESTYLES, i)
 
         plot!(p, t, S;
             color=color,

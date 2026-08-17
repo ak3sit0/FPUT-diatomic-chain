@@ -12,22 +12,29 @@ Usage:
 """
 
 using JLD2, CairoMakie, Statistics, LaTeXStrings, Colors
+include("../../src/fput_analysis.jl");  using .FPUTAnalysis
+include("../../src/plotting_utils.jl"); using .PlottingUtils
 
-const BLUES_GRADIENT = cgrad([:white, "#B2D9FF", "#5999F2", "#3359CC", "#0D4CB3"])
+const BLUES_GRADIENT = cgrad(BLUES_STOPS)
 
 """
-    compute_thermalization_time(t::Vector, E_opt::Vector; threshold=0.9)
+    trend!(ax, x, y; band=nothing, guide=nothing)
 
-Calcula el tiempo en que E_opt alcanza el 90% de su valor asintótico.
+Serie scatter+línea en el azul estándar, con banda ±σ opcional y línea guía
+horizontal opcional. Los paneles Δκ del resumen sólo difieren en estos extras.
 """
-function compute_thermalization_time(t::Vector, E_opt::Vector; threshold=0.9)
-    if isempty(E_opt) || length(t) != length(E_opt)
-        return NaN
-    end
-    E_inf = mean(E_opt[max(1, round(Int, 0.9*length(E_opt))):end])
-    idx = findfirst(e -> e >= threshold * E_inf, E_opt)
-    return isnothing(idx) ? NaN : t[idx]
+function trend!(ax, x, y; band=nothing, guide=nothing)
+    isnothing(band) || band!(ax, x, y .- band, y .+ band; alpha=0.3, color=BLUE_MID)
+    scatter!(ax, x, y; color=BLUE_DARK, markersize=8)
+    lines!(ax, x, y; color=BLUE_DARK, linewidth=2)
+    isnothing(guide) || hlines!(ax, [guide]; color=GRAY_GUIDE, linestyle=:dash, linewidth=1)
+    ax
 end
+
+"""Eje de un panel Δκ del resumen (título, etiquetas y tamaños comunes)."""
+delta_axis(pos; title, ylabel, kwargs...) = Axis(pos;
+    title=title, xlabel=latexstring("\\Delta\\kappa"), ylabel=ylabel,
+    titlesize=14, xlabelsize=12, ylabelsize=12, kwargs...)
 
 function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/ensemble")
     mkpath(outdir)
@@ -67,7 +74,7 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
         push!(E_opt_finals, E_opt_frac)
 
         # Calcular tiempo de termalización
-        t_th = compute_thermalization_time(result.scaled_t, result.E_optical_mean)
+        t_th = thermalization_time(result.scaled_t, result.E_optical_mean)
         push!(T_th_values, t_th)
     end
 
@@ -152,8 +159,8 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
                     xticklabelsvisible = (i == n_cols),
                     yticklabelsvisible = (i == 1))
 
-                band!(ax, t, S_mean .- S_std, S_mean .+ S_std, alpha=0.3, color="#5999F2")
-                lines!(ax, t, S_mean, color="#0D4CB3", linewidth=2)
+                band!(ax, t, S_mean .- S_std, S_mean .+ S_std, alpha=0.3, color=BLUE_MID)
+                lines!(ax, t, S_mean, color=BLUE_DARK, linewidth=2)
             end
         end
     end
@@ -169,26 +176,16 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
     ga3 = fig3[1, 1] = GridLayout()
 
     # Panel 3a: Entropía final vs Δκ
-    ax_s = Axis(ga3[1, 1];
-        title="Final entropy vs Δκ",
-        xlabel=latexstring("\\Delta\\kappa"), ylabel=latexstring("\\bar{S}(\\infty)"),
-        titlesize=14, xlabelsize=12, ylabelsize=12)
-
-    band!(ax_s, all_deltas, S_final_means .- S_final_stds, S_final_means .+ S_final_stds,
-        alpha=0.3, color="#5999F2")
-    scatter!(ax_s, all_deltas, S_final_means, color="#0D4CB3", markersize=8)
-    lines!(ax_s, all_deltas, S_final_means, color="#0D4CB3", linewidth=2)
+    ax_s = delta_axis(ga3[1, 1];
+        title="Final entropy vs Δκ", ylabel=latexstring("\\bar{S}(\\infty)"))
+    trend!(ax_s, all_deltas, S_final_means; band=S_final_stds)
     ylims!(ax_s, 3.5, 4.2)
 
     # Panel 3b: Energía óptica relativa vs Δκ
-    ax_e = Axis(ga3[2, 1];
+    ax_e = delta_axis(ga3[2, 1];
         title="Optical energy fraction vs Δκ",
-        xlabel=latexstring("\\Delta\\kappa"), ylabel=latexstring("E_{\\mathrm{opt}} / E_{\\mathrm{tot}}"),
-        titlesize=14, xlabelsize=12, ylabelsize=12)
-
-    scatter!(ax_e, all_deltas, E_opt_finals, color="#0D4CB3", markersize=8)
-    lines!(ax_e, all_deltas, E_opt_finals, color="#0D4CB3", linewidth=2)
-    hlines!(ax_e, [0.5], color=:gray, linestyle=:dash, linewidth=1)
+        ylabel=latexstring("E_{\\mathrm{opt}} / E_{\\mathrm{tot}}"))
+    trend!(ax_e, all_deltas, E_opt_finals; guide=0.5)
     ylims!(ax_e, 0.2, 0.55)
 
     rowgap!(ga3, 20)
@@ -200,27 +197,18 @@ function plot_ensemble_diagnostics(jld2_path::String; outdir="results/figures/en
     ga4 = fig4[1, 1] = GridLayout()
 
     # Panel 4a: T_th vs Δκ
-    ax_th = Axis(ga4[1, 1];
+    ax_th = delta_axis(ga4[1, 1];
         title="Thermalization time vs Δκ",
-        xlabel=latexstring("\\Delta\\kappa"), ylabel=latexstring("T_{\\mathrm{th}} \\; (\\mathrm{cycles})"),
-        titlesize=14, xlabelsize=12, ylabelsize=12,
-        yscale=log10)
+        ylabel=latexstring("T_{\\mathrm{th}} \\; (\\mathrm{cycles})"), yscale=log10)
 
     valid_th = .!isnan.(T_th_values)
-    if any(valid_th)
-        scatter!(ax_th, all_deltas[valid_th], T_th_values[valid_th], color="#0D4CB3", markersize=8)
-        lines!(ax_th, all_deltas[valid_th], T_th_values[valid_th], color="#0D4CB3", linewidth=2)
-    end
+    any(valid_th) && trend!(ax_th, all_deltas[valid_th], T_th_values[valid_th])
 
     # Panel 4b: E_opt equilibrium vs Δκ
-    ax_eq = Axis(ga4[2, 1];
+    ax_eq = delta_axis(ga4[2, 1];
         title="Equilibrium optical energy fraction",
-        xlabel=latexstring("\\Delta\\kappa"), ylabel=latexstring("E_{\\mathrm{opt}}^{\\mathrm{eq}} / E_{\\mathrm{tot}}"),
-        titlesize=14, xlabelsize=12, ylabelsize=12)
-
-    scatter!(ax_eq, all_deltas, E_opt_finals, color="#0D4CB3", markersize=8)
-    lines!(ax_eq, all_deltas, E_opt_finals, color="#0D4CB3", linewidth=2)
-    hlines!(ax_eq, [0.5], color=:gray, linestyle=:dash, linewidth=1)
+        ylabel=latexstring("E_{\\mathrm{opt}}^{\\mathrm{eq}} / E_{\\mathrm{tot}}"))
+    trend!(ax_eq, all_deltas, E_opt_finals; guide=0.5)
     ylims!(ax_eq, 0.2, 0.55)
 
     rowgap!(ga4, 20)

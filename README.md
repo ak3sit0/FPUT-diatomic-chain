@@ -52,7 +52,8 @@ The production workflows are meant to run on **HPC with PBS/Torque**; see
 | [fput_core.jl](src/fput_core.jl) | `FPUTCore` | `SystemParams`, `make_system` (alternating κ and m), `fput_forces!` (α/β forces with κ scaling, `:fixed` and `:periodic` boundaries), `find_normal_modes` (diagonalization of the dynamical matrix) |
 | [fput_fast_runner.jl](src/fput_fast_runner.jl) | `FPUTFastRunner` | `solve_fput`: `SecondOrderODEProblem` integrated with **KahanLi8** (8th-order symplectic) |
 | [fput_analysis.jl](src/fput_analysis.jl) | `FPUTAnalysis` | `compute_modal_energies` (mass-weighted projection), `sliding_window_avg` (growing window Δ·t), `spectral_entropy` |
-| [config.jl](src/config.jl) | `Config` | `ExperimentConfig` and `PlotConfig` loaded from TOML, plus `default_plot_config` |
+| [config.jl](src/config.jl) | `Config` | `ExperimentConfig` and `PlotConfig` loaded from TOML, `default_plot_config`, and `resolve_config_path`/`as_experiment_config` for results files that recorded a since-moved config |
+| [plotting_utils.jl](src/plotting_utils.jl) | `PlottingUtils` | Single source for palettes/linestyles (`PALETTE_DELTA`, `BLUES_STOPS`, `SPEC_*`), cyclic indexing `cyc`, and shared figure helpers (`entropy_series`, `prepare_ts`, `logdownsample`, `load_results_by_delta`) |
 
 The modules are loaded with `include(...)`, not as a registered package.
 
@@ -62,37 +63,35 @@ The modules are loaded with `include(...)`, not as a registered package.
 
 | Script | What it does |
 |---|---|
-| [compute_trajectories.jl](scripts/compute_trajectories.jl) | `param_values × delta_values` sweep in time blocks; saves one `.jld2` with modal energies |
-| [compute_trajectories_Nsweep.jl](scripts/compute_trajectories_Nsweep.jl) | Same, but sweeping over `N_values` |
-| [compute_ensemble.jl](scripts/compute_ensemble.jl) | **Phase ensemble** over a selected band (acoustic/optical): mean and spread of S̄(t), per-branch energies, T_therm. Parallelized over (param, delta) |
-| [compute_ensemble_Nsweep.jl](scripts/compute_ensemble_Nsweep.jl) | Ensemble with fixed α and Δκ, sweeping over N (one thread per N) |
-| [compute_ftmle.jl](scripts/compute_ftmle.jl) | Benettin ftMLE (two trajectories + renormalization), multiple Δκ in parallel |
-| [generate_hpc_jobs.jl](scripts/generate_hpc_jobs.jl) | Generates one `.toml` + `.pbs` per N, with `ppn`/walltime scaled accordingly |
-| [check_hpc_status.jl](scripts/check_hpc_status.jl) | Status report for the multi-N jobs (logs, `.SUCCESS`/`.FAILED`, outputs) |
+| [compute_trajectories.jl](scripts/compute/compute_trajectories.jl) | `param_values × delta_values` sweep in time blocks; saves one `.jld2` with modal energies |
+| [compute_trajectories_Nsweep.jl](scripts/compute/compute_trajectories_Nsweep.jl) | Same, but sweeping over `N_values` |
+| [compute_ensemble.jl](scripts/compute/compute_ensemble.jl) | **Phase ensemble** over a selected band (acoustic/optical): mean and spread of S̄(t), per-branch energies, T_therm. Parallelized over (param, delta) |
+| [compute_ensemble_Nsweep.jl](scripts/compute/compute_ensemble_Nsweep.jl) | Ensemble with fixed α and Δκ, sweeping over N (one thread per N) |
+| [compute_ftmle.jl](scripts/compute/compute_ftmle.jl) | Benettin ftMLE (two trajectories + renormalization), multiple Δκ in parallel |
+| [generate_hpc_jobs.jl](scripts/hpc/generate_hpc_jobs.jl) | Generates one `.toml` + `.pbs` per N, with `ppn`/walltime scaled accordingly |
+| [check_hpc_status.jl](scripts/hpc/check_hpc_status.jl) | Status report for the multi-N jobs (logs, `.SUCCESS`/`.FAILED`, outputs) |
 
 ## Figure scripts (`scripts/`)
 
 | Script | Figure |
 |---|---|
-| [plot_entropy_paper.jl](scripts/plot_entropy_paper.jl) | Official S̄(t) figures for FBC and PBC, with color/style encoding per Δκ |
-| [plot_entropy_pbc_complete.jl](scripts/plot_entropy_pbc_complete.jl) | PBC S̄(t) combining the production sweep (Δκ 0.05–0.7) with the Δκ=0.9 run |
-| [plot_entropy_param_sweep.jl](scripts/plot_entropy_param_sweep.jl) | Entropy and localization ξ curves for parameter sweeps |
-| [plot_ensemble_results.jl](scripts/plot_ensemble_results.jl) | Ensemble diagnostics: modal heatmaps, S̄±σ, global summary, T_th vs Δκ |
-| [plot_heatmap_grid.jl](scripts/plot_heatmap_grid.jl) | Grid of modal-energy heatmaps (CairoMakie), configurable via TOML |
-| [plot_ftmle.jl](scripts/plot_ftmle.jl) | λ(t) log-log with a fitted power law t^(−δ); supports several overlaid JLD2 files |
+| [plot_entropy_paper.jl](scripts/plot/plot_entropy_paper.jl) | Official S̄(t) figures for FBC and PBC; extra PBC files are merged into a combined Δκ 0.05–0.9 figure |
+| [plot_entropy_param_sweep.jl](scripts/plot/plot_entropy_param_sweep.jl) | Entropy and localization ξ curves for parameter sweeps |
+| [plot_ensemble_results.jl](scripts/plot/plot_ensemble_results.jl) | Ensemble diagnostics: modal heatmaps, S̄±σ, global summary, T_th vs Δκ |
+| [plot_heatmap_grid.jl](scripts/plot/plot_heatmap_grid.jl) | Grid of modal-energy heatmaps (CairoMakie), configurable via TOML |
+| [plot_ftmle.jl](scripts/plot/plot_ftmle.jl) | λ(t) log-log with a fitted power law t^(−δ); supports several overlaid JLD2 files |
 
 ## Theory and exploratory scripts (`examples/`)
 
 | Script | Contents |
 |---|---|
-| [plot_dispersion_relation.jl](examples/plot_dispersion_relation.jl) | ω±(k) for several Δκ |
-| [plot_resonance_level_curves.jl](examples/plot_resonance_level_curves.jl) | Level curves of the three-wave resonance residual |
-| [coupling_coefficients.jl](examples/coupling_coefficients.jl) | Eigenvectors of the two branches and coupling coefficients |
-| [plot_gamma_with_resonance.jl](examples/plot_gamma_with_resonance.jl) | \|Γ\| overlaid on the resonance manifold (provides `compute_gamma`, `omega_branch`) |
-| [plot_aao_delta_sweep.jl](examples/plot_aao_delta_sweep.jl) | Δκ sweep of the acoustic+acoustic→optical channel |
-| [compute_scattering_rate.jl](examples/compute_scattering_rate.jl) | R(η) as a line integral over the resonance manifold (co-area formula) |
-| [plot_entropy_Nsweep.jl](examples/plot_entropy_Nsweep.jl) | Same, with publication styling |
-| [plot_thermalization_time.jl](examples/plot_thermalization_time.jl) | T_th vs Δκ with a halo showing the spread across realizations |
+| [plot_dispersion_relation.jl](examples/dispersion/plot_dispersion_relation.jl) | ω±(k) for several Δκ |
+| [plot_resonance_level_curves.jl](examples/resonance/plot_resonance_level_curves.jl) | Level curves of the three-wave resonance residual |
+| [coupling_coefficients.jl](examples/coupling/coupling_coefficients.jl) | 3×3 grid of \|Γ_σ1σ2σ3\|; `resonance=true` overlays the resonance manifold |
+| [plot_aao_delta_sweep.jl](examples/coupling/plot_aao_delta_sweep.jl) | Δκ sweep of the acoustic+acoustic→optical channel |
+| [compute_scattering_rate.jl](examples/coupling/compute_scattering_rate.jl) | R(η) as a line integral over the resonance manifold (co-area formula) |
+| [plot_entropy_Nsweep.jl](examples/ensemble/plot_entropy_Nsweep.jl) | S̄(t) for several N, publication styling |
+| [plot_thermalization_time.jl](examples/ensemble/plot_thermalization_time.jl) | T_th vs Δκ with a halo showing the spread across realizations |
 
 ---
 
@@ -115,7 +114,7 @@ julia --project=. -e 'import Pkg; Pkg.instantiate()'
 > ```
 >
 > - `CairoMakie` — `plot_heatmap_grid.jl`, `plot_ensemble_results.jl` and most of `examples/`
-> - `Contour`, `Interpolations` — `examples/compute_scattering_rate.jl`
+> - `Contour`, `Interpolations` — `examples/coupling/compute_scattering_rate.jl`
 > - `TOML`, `Random`, `Printf`, `Dates` — stdlibs used by the compute scripts
 
 ---
@@ -146,8 +145,8 @@ julia --project=. scripts/plot/plot_ftmle.jl results/data/ftmle/ftmle_periodic_d
 ### Paper figures
 
 ```bash
-julia --project=. scripts/plot/plot_entropy_paper.jl <fbc.jld2> <pbc.jld2>
-julia --project=. scripts/plot/plot_entropy_pbc_complete.jl <pbc_0p05-0p7.jld2> <pbc_delta09.jld2>
+# third and later arguments add the merged Δκ 0.05–0.9 figure
+julia --project=. scripts/plot/plot_entropy_paper.jl <fbc.jld2> <pbc.jld2> [<pbc_delta09.jld2> ...]
 ```
 
 ### Multi-N HPC workflow (PBS/TORQUE)

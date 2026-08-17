@@ -10,25 +10,17 @@ Usage:
 """
 
 using JLD2, Plots, LaTeXStrings, Statistics
+include("../../src/fput_analysis.jl");   using .FPUTAnalysis
+include("../../src/plotting_utils.jl");  using .PlottingUtils
 
 gr()
 
+const XLABEL_DELTA = latexstring("\\Delta\\kappa")
+const YLABEL_TTH   = latexstring("T_{\\mathrm{th}} \\; (\\mathrm{cycles})")
+const YLABEL_EOPT  = latexstring("E_{\\mathrm{opt}} / E_{\\mathrm{tot}}")
+
 function apply_recovery_style!()
     default(titlefont=font(16), guidefont=font(14), tickfont=font(11), legendfont=font(12))
-end
-
-"""
-    compute_thermalization_time(t::Vector, E_opt::Vector; threshold=0.9)
-
-Tiempo en que E_opt alcanza el porcentaje umbral (default 90%) de su valor asintótico.
-"""
-function compute_thermalization_time(t::Vector, E_opt::Vector; threshold=0.9)
-    if isempty(E_opt) || length(t) != length(E_opt)
-        return NaN
-    end
-    E_inf = mean(E_opt[max(1, round(Int, 0.9*length(E_opt))):end])
-    idx = findfirst(e -> e >= threshold * E_inf, E_opt)
-    return isnothing(idx) ? NaN : t[idx]
 end
 
 """
@@ -67,6 +59,21 @@ function plot_halo_scatter!(p, deltas, means, stds, color_main, color_halo; n_la
         legend=false)
 end
 
+"""
+    halo_panel(deltas, means, stds; colors, ylabel, n_layers, guide, kwargs...) -> Plot
+
+Panel de scatter con halo. Las cuatro figuras de este script son este mismo panel
+con distinta escala, paleta y línea guía.
+"""
+function halo_panel(deltas, means, stds; colors, ylabel, n_layers=5,
+                    guide=nothing, xlabel=XLABEL_DELTA, kwargs...)
+    p = plot(; xlabel=xlabel, ylabel=ylabel, legend=false, grid=true,
+               framestyle=:box, left_margin=5Plots.mm, kwargs...)
+    plot_halo_scatter!(p, deltas, means, stds, colors...; n_layers=n_layers)
+    isnothing(guide) || hline!(p, [guide], line=(:dash, GRAY_GUIDE, 2), label="")
+    p
+end
+
 function main()
     if isempty(ARGS)
         println("Usage: julia examples/plot_thermalization_time.jl <results.jld2>")
@@ -95,7 +102,7 @@ function main()
             # Tenemos datos per-realización: calcular σ(T_th)
             T_th_realizations = Float64[]
             for E_opt_real in result.E_optical_realizations
-                t_th = compute_thermalization_time(result.scaled_t, E_opt_real)
+                t_th = thermalization_time(result.scaled_t, E_opt_real)
                 push!(T_th_realizations, t_th)
             end
             valid_th = .!isnan.(T_th_realizations)
@@ -105,7 +112,7 @@ function main()
             end
         else
             # Fallback: solo media del ensamble (compatibilidad con datos antiguos)
-            T_th_mean = compute_thermalization_time(result.scaled_t, result.E_optical_mean)
+            T_th_mean = thermalization_time(result.scaled_t, result.E_optical_mean)
             T_th_std = 0.0
         end
 
@@ -129,87 +136,33 @@ function main()
 
     apply_recovery_style!()
 
-    # --- Figura 1: T_th vs Δκ (escala log) con halo ---
-    p1 = plot(
-        xlabel=latexstring("\\Delta\\kappa"),
-        ylabel=latexstring("T_{\\mathrm{th}} \\; (\\mathrm{cycles})"),
-        legend=false,
-        grid=true,
-        size=(1000, 700),
-        yscale=:log10,
-        framestyle=:box,
-        bottom_margin=5Plots.mm,
-        left_margin=5Plots.mm
-    )
+    outdir = "results/figures/ensemble"
+    mkpath(outdir)
 
-    plot_halo_scatter!(p1, all_deltas, T_th_means, T_th_stds,
-        :darkblue, :steelblue; n_layers=5)
+    T_th_panel(colors; kwargs...) = halo_panel(all_deltas, T_th_means, T_th_stds;
+        colors=colors, ylabel=YLABEL_TTH, n_layers=5, kwargs...)
+    E_opt_panel(; kwargs...) = halo_panel(all_deltas, E_opt_means, E_opt_stds;
+        colors=HALO_RED, ylabel=YLABEL_EOPT, n_layers=3, guide=0.5, ylim=(0.2, 0.6), kwargs...)
 
-    savefig(p1, "results/figures/ensemble/thermalization_time_log.pdf")
-    println("Saved: results/figures/ensemble/thermalization_time_log.pdf")
+    figs = [
+        ("thermalization_time_log.pdf",
+         T_th_panel(HALO_BLUE; yscale=:log10, size=(1000, 700), bottom_margin=5Plots.mm)),
+        ("thermalization_time_linear.pdf",
+         T_th_panel(HALO_TEAL; size=(1000, 700), bottom_margin=5Plots.mm)),
+        ("optical_energy_equilibrium.pdf",
+         E_opt_panel(size=(1000, 700), bottom_margin=5Plots.mm)),
+        # Figura 4: las dos anteriores apiladas (sin xlabel en el panel superior)
+        ("thermalization_combined.pdf",
+         plot(T_th_panel(HALO_BLUE; yscale=:log10, xlabel="",
+                         ylabel=latexstring("T_{\\mathrm{th}}"), bottom_margin=2Plots.mm),
+              E_opt_panel(bottom_margin=5Plots.mm),
+              layout=(@layout [a; b]), size=(1000, 1100))),
+    ]
 
-    # --- Figura 2: T_th vs Δκ (escala lineal) con halo ---
-    p2 = plot(
-        xlabel=latexstring("\\Delta\\kappa"),
-        ylabel=latexstring("T_{\\mathrm{th}} \\; (\\mathrm{cycles})"),
-        legend=false,
-        grid=true,
-        size=(1000, 700),
-        framestyle=:box,
-        bottom_margin=5Plots.mm,
-        left_margin=5Plots.mm
-    )
-
-    plot_halo_scatter!(p2, all_deltas, T_th_means, T_th_stds,
-        :steelblue, :lightblue; n_layers=5)
-
-    savefig(p2, "results/figures/ensemble/thermalization_time_linear.pdf")
-    println("Saved: results/figures/ensemble/thermalization_time_linear.pdf")
-
-    # --- Figura 3: E_opt equilibrium vs Δκ con halo ---
-    p3 = plot(
-        xlabel=latexstring("\\Delta\\kappa"),
-        ylabel=latexstring("E_{\\mathrm{opt}} / E_{\\mathrm{tot}}"),
-        legend=false,
-        grid=true,
-        size=(1000, 700),
-        framestyle=:box,
-        ylim=(0.2, 0.6),
-        bottom_margin=5Plots.mm,
-        left_margin=5Plots.mm
-    )
-
-    plot_halo_scatter!(p3, all_deltas, E_opt_means, E_opt_stds,
-        :darkred, :salmon; n_layers=3)
-    hline!(p3, [0.5], line=(:dash, :gray, 2), label="")
-
-    savefig(p3, "results/figures/ensemble/optical_energy_equilibrium.pdf")
-    println("Saved: results/figures/ensemble/optical_energy_equilibrium.pdf")
-
-    # --- Figura 4: Ambas en subplots ---
-    p_layout = @layout [a; b]
-
-    p4a = plot(
-        xlabel="", ylabel=latexstring("T_{\\mathrm{th}}"),
-        legend=false, grid=true, yscale=:log10, framestyle=:box,
-        bottom_margin=2Plots.mm, left_margin=5Plots.mm
-    )
-    plot_halo_scatter!(p4a, all_deltas, T_th_means, T_th_stds,
-        :darkblue, :steelblue; n_layers=5)
-
-    p4b = plot(
-        xlabel=latexstring("\\Delta\\kappa"),
-        ylabel=latexstring("E_{\\mathrm{opt}}/E_{\\mathrm{tot}}"),
-        legend=false, grid=true, ylim=(0.2, 0.6), framestyle=:box,
-        bottom_margin=5Plots.mm, left_margin=5Plots.mm
-    )
-    plot_halo_scatter!(p4b, all_deltas, E_opt_means, E_opt_stds,
-        :darkred, :salmon; n_layers=3)
-    hline!(p4b, [0.5], line=(:dash, :gray, 2), label="")
-
-    p_combined = plot(p4a, p4b, layout=p_layout, size=(1000, 1100))
-    savefig(p_combined, "results/figures/ensemble/thermalization_combined.pdf")
-    println("Saved: results/figures/ensemble/thermalization_combined.pdf")
+    for (name, fig) in figs
+        savefig(fig, joinpath(outdir, name))
+        println("Saved: $outdir/$name")
+    end
 
     # --- Tabla de resultados ---
     println("\n=== Thermalization times with uncertainty ===")

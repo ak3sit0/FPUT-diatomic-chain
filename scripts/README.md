@@ -31,8 +31,7 @@ Workflow: `generate_*.jl` → `qsub` → `check_hpc_status.jl` → `compute_ense
 
 ```
 plot/
-├── plot_entropy_paper.jl       # Entropía vs t (FBC/PBC, Plots.jl)
-├── plot_entropy_pbc_complete.jl # Merge PBC files, figura Δκ=0.05–0.9 (Plots.jl)
+├── plot_entropy_paper.jl       # Entropía vs t: FBC, PBC y PBC-completo (Plots.jl)
 ├── plot_entropy_param_sweep.jl  # Entropía genérica multi-param (Plots.jl)
 ├── plot_ftmle.jl               # λ(t) log-log con power-law (Plots.jl)
 ├── plot_ensemble_results.jl    # Heatmaps energía modal + termalización (CairoMakie)
@@ -44,5 +43,10 @@ plot/
 ## Notas de desarrollo
 
 - Los scripts de `plot/` que usan `results/figures/...` asumen ejecución desde la raíz del proyecto (`julia --project=. scripts/plot/plot_*.jl`).
+- Paletas, estilos y helpers de entropía (`entropy_series`, `prepare_ts`, `logdownsample`,
+  `load_results_by_delta`, `cyc`) viven en `PlottingUtils` (`src/plotting_utils.jl`). Usa
+  siempre `cyc(palette, i)` en vez de `palette[i]` para indexar paletas.
+- `plot_entropy_pbc_complete.jl` se fusionó en `plot_entropy_paper.jl`: era el mismo script con
+  otra spec de Δκ y un loader multi-archivo. Pasar un tercer argumento genera la figura extendida.
 - `derive_band_indices`/`band_phase_ic` viven en `FPUTCore` (`src/fput_core.jl`); el loop de integración por bloques (usado en los 4 scripts `compute_*.jl`) vive en `BlockIntegration.integrate_in_blocks` (`src/block_integration.jl`).
 - Ver `docs/` para diagnósticos conocidos (duplicación código restante, backend de plotting, física).

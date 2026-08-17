@@ -9,8 +9,10 @@ Usage:
   julia --project=. scripts/plot_heatmap_grid.jl <plot_config.toml | results.jld2>
 """
 
-using CairoMakie, JLD2, LaTeXStrings, Colors
-include("../../src/config.jl"); using Main.Config
+using CairoMakie, JLD2, LaTeXStrings, Colors, Statistics
+include("../../src/config.jl");         using .Config
+include("../../src/fput_analysis.jl");  using .FPUTAnalysis
+include("../../src/plotting_utils.jl"); using .PlottingUtils
 
 function build_plot_config(input_arg::Union{String,Nothing} = nothing)
     if isnothing(input_arg)
@@ -34,10 +36,7 @@ function load_heatmap_data(datafile::String; filter_params::Vector{Float64}=Floa
     println("Loading: $datafile")
     data = load(datafile)
     results = data["results"]
-    config = data["config"]
-    if isa(config, String) && isfile(config)
-        config = Config.load_experiment_config(config)
-    end
+    config = Config.as_experiment_config(data["config"])
 
     if !isempty(filter_params)
         results = filter(r -> any(p -> isapprox(Float64(r.param), p, rtol=1e-6), filter_params), results)
@@ -57,28 +56,34 @@ struct PanelData
     z_plot::Matrix{Float64}
 end
 
+"""Columns per panel above which rendering gets expensive enough to warn about."""
+const COLS_WARN = 200_000
+
 function prepare_panel_data(result, cfg)
     t_raw = Float64.(result.scaled_t)
-    z_raw = Float64.(result.modal_E)
-    if size(z_raw, 1) > size(z_raw, 2)
-        z_raw = z_raw'
+    z_raw = result.modal_E
+    size(z_raw, 1) > size(z_raw, 2) && (z_raw = permutedims(z_raw))
+
+    # Resolve the kept columns first, then slice once. Slicing in two steps
+    # (`z[:, window][:, ::sub]`) copies the whole N×nt matrix twice — ~0.5 GB per
+    # copy at nt = 10⁶.
+    idx = findall(t -> cfg.t_min <= t <= cfg.t_max, t_raw)
+    cfg.time_subsample > 1 && (idx = idx[1:cfg.time_subsample:end])
+
+    if length(idx) > COLS_WARN
+        @warn "Panel has $(length(idx)) time columns; rendering will be slow and memory-hungry. \
+               Set `time_subsample` (or `t_max`) in a plot TOML to thin it — note that changes \
+               the rasterized result, so keep it fixed across figures meant to be compared." maxlog=1
     end
 
-    t_idx = findall(t -> cfg.t_min <= t <= cfg.t_max, t_raw)
-    t_vals = t_raw[t_idx][1:cfg.time_subsample:end]
-    z_vals = z_raw[:, t_idx][:, 1:cfg.time_subsample:end]
-    z_plot = clamp.(z_vals, cfg.clamp_min, cfg.clamp_max)
+    t_vals = t_raw[idx]
+    z_plot = clamp.(Float64.(@view z_raw[:, idx]), cfg.clamp_min, cfg.clamp_max)
 
-    # If the plotting uses a log-scale x axis, replace zeros (log undefined).
-    if any(t_vals .<= 0)
-        pos = t_vals[t_vals .> 0]
-        if !isempty(pos)
-            minpos = minimum(pos)
-            t_vals = [t <= 0 ? minpos/10 : t for t in t_vals]
-        else
-            # fallback tiny positive number if no positive times available
-            t_vals = [t <= 0 ? 1e-12 : t for t in t_vals]
-        end
+    # Log-scale x axis: push non-positive times a decade below the smallest positive one.
+    if any(<=(0), t_vals)
+        pos = filter(>(0), t_vals)
+        floor_t = isempty(pos) ? 1e-12 : minimum(pos) / 10
+        t_vals = [t <= 0 ? floor_t : t for t in t_vals]
     end
 
     PanelData(t_vals, 1:size(z_raw, 1), z_plot)
@@ -89,68 +94,50 @@ function find_result(dataset::HeatmapDataset, param, delta)
     isnothing(idx) ? nothing : dataset.results[idx]
 end
 
+"""
+    decade_ticks(t_vals) -> (positions, labels) | nothing
+
+Ticks at integer powers of ten inside the panel's time range; widens to the
+enclosing decades when none fall inside. `nothing` when there is no positive
+time to place on a log axis.
+"""
+function decade_ticks(t_vals)
+    (isempty(t_vals) || !any(>(0), t_vals)) && return nothing
+    xt = [10.0^e for e in 0:floor(Int, log10(t_vals[end])) if t_vals[1] <= 10.0^e <= t_vals[end]]
+    if isempty(xt)
+        lo = floor(Int, log10(minimum(filter(>(0), t_vals))))
+        hi = ceil(Int, log10(t_vals[end]))
+        xt = [10.0^e for e in lo:hi]
+    end
+    xt, [x >= 1 ? string(Int(x)) : string(x) for x in xt]
+end
+
 function make_panel_axis(ga, row, col, panel::PanelData, dataset::HeatmapDataset, cfg)
     n_rows = length(dataset.param_values)
-    delta = dataset.delta_values[col]
     m = panel.mode_range
     y_tick_coords = range(first(m), last(m), length=5)
-    y_tick_labels = [string(round(Int, y)) for y in y_tick_coords]
+    ticks = decade_ticks(panel.t_vals)
 
-    # Create axis; if we have positive times use log10 scale with power-of-10 ticks
-    pos = panel.t_vals[panel.t_vals .> 0]
-    if !isempty(pos)
-        minpos = minimum(pos)
-        # prefer ticks at integer powers of ten starting at 10^0 up to max
-        max_exp = floor(Int, log10(panel.t_vals[end]))
-        candidate_exps = 0:max_exp
-        xt_all = 10.0 .^ candidate_exps
-        # keep only ticks inside the current panel time range
-        xt = xt_all[(xt_all .>= panel.t_vals[1]) .& (xt_all .<= panel.t_vals[end])]
-        xlabels = [string(Int(x)) for x in xt]
-        # fallback: if no powers-of-ten fall inside range, revert to full computed range
-        if isempty(xt)
-            exp_min = floor(Int, log10(minpos))
-            exp_max = ceil(Int, log10(panel.t_vals[end]))
-            exps = exp_min:exp_max
-            xt = 10.0 .^ exps
-            xlabels = [string(Int(x)) for x in xt]
-        end
-
-        ax = Axis(ga[row, col];
-            title              = row == 1 ? latexstring("\\Delta \\kappa = $delta") : "",
-            titlesize          = cfg.titlesize,
-            titlefont          = cfg.font,
-            xticklabelsize     = cfg.ticksize,
-            xticklabelfont     = cfg.font,
-            yticklabelsize     = cfg.ticksize,
-            yticklabelfont     = cfg.font,
-            xticklabelsvisible = row == n_rows,
-            yticklabelsvisible = col == 1,
-            xscale             = log10,
-            yticks             = (y_tick_coords, y_tick_labels),
-            xticks             = (xt, xlabels),
-        )
-    else
-        ax = Axis(ga[row, col];
-            title              = row == 1 ? latexstring("\\Delta \\kappa = $delta") : "",
-            titlesize          = cfg.titlesize,
-            titlefont          = cfg.font,
-            xticklabelsize     = cfg.ticksize,
-            xticklabelfont     = cfg.font,
-            yticklabelsize     = cfg.ticksize,
-            yticklabelfont     = cfg.font,
-            xticklabelsvisible = row == n_rows,
-            yticklabelsvisible = col == 1,
-            xscale             = identity,
-            yticks             = (y_tick_coords, y_tick_labels),
-        )
-    end
-    return ax
+    Axis(ga[row, col];
+        title              = row == 1 ? latexstring("\\Delta \\kappa = $(dataset.delta_values[col])") : "",
+        titlesize          = cfg.titlesize,
+        titlefont          = cfg.font,
+        xticklabelsize     = cfg.ticksize,
+        xticklabelfont     = cfg.font,
+        yticklabelsize     = cfg.ticksize,
+        yticklabelfont     = cfg.font,
+        xticklabelsvisible = row == n_rows,
+        yticklabelsvisible = col == 1,
+        xscale             = isnothing(ticks) ? identity : log10,
+        yticks             = (y_tick_coords, [string(round(Int, y)) for y in y_tick_coords]),
+        # Makie treats `automatic` as "pick your own"; only override when we have decades.
+        (isnothing(ticks) ? () : (xticks = ticks,))...,
+    )
 end
 
 function render_heatmap_panel!(ax, panel::PanelData, cfg)
     hm = heatmap!(ax, panel.t_vals, panel.mode_range, panel.z_plot';
-        colormap = cgrad([:white, "#B2D9FF", "#5999F2", "#3359CC", "#0D4CB3"]),
+        colormap = cgrad(BLUES_STOPS),
         colorscale = cfg.color_scale == :log ? log10 : identity,
         colorrange = cfg.color_scale == :log ? (cfg.clamp_min, cfg.clamp_max) : (0.0, cfg.clamp_max),
         rasterize = 4,
@@ -166,27 +153,17 @@ function add_labels_and_colorbar!(fig, ga, hm_ref, cfg)
     Label(fig[1, 1, Left()], "Mode Index";
         fontsize = cfg.labelsize, rotation = pi/2, padding = (0, 60, 0, 0), font = cfg.font)
 
-    if cfg.color_scale == :log
-        Colorbar(fig[1, 2], hm_ref;
-            label = "Log10(Energy)",
-            labelsize = cfg.labelsize,
-            labelfont = cfg.font,
-            ticklabelsize = cfg.ticksize,
-            ticklabelfont = cfg.font,
-            ticks = [1e-6, 1e-4, 1e-2, 1.0],
-            tickformat = _ -> ["10^-6", "10^-4", "10^-2", "1"],
-            width = 36,
-        )
-    else
-        Colorbar(fig[1, 2], hm_ref;
-            label = "Energy",
-            labelsize = cfg.labelsize,
-            labelfont = cfg.font,
-            ticklabelsize = cfg.ticksize,
-            ticklabelfont = cfg.font,
-            width = 36,
-        )
-    end
+    is_log = cfg.color_scale == :log
+    Colorbar(fig[1, 2], hm_ref;
+        label         = is_log ? "Log10(Energy)" : "Energy",
+        labelsize     = cfg.labelsize,
+        labelfont     = cfg.font,
+        ticklabelsize = cfg.ticksize,
+        ticklabelfont = cfg.font,
+        width         = 36,
+        (is_log ? (ticks = [1e-6, 1e-4, 1e-2, 1.0],
+                   tickformat = _ -> ["10^-6", "10^-4", "10^-2", "1"]) : ())...,
+    )
 
     colgap!(ga, cfg.gap)
     rowgap!(ga, cfg.gap)

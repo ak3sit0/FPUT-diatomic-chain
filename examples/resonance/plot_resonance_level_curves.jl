@@ -1,18 +1,11 @@
 using Plots, LaTeXStrings, Colors
+include("../../src/dispersion.jl");      using .Dispersion
+include("../../src/fput_analysis.jl");   using .FPUTAnalysis
+include("../../src/plotting_utils.jl");  using .PlottingUtils
 
-# Dispersión — forma compacta ec. (9) del paper
-# κ* = 1 - Δκ², válido para cualquier convención A/B
-function omega_plus(k, delta)
-    k = mod(k + π, 2π) - π          # wrap a [-π, π]
-    A = sqrt(max(1 - (1 - delta^2) * sin(k/2)^2, 0.0))
-    sqrt(2 + 2A)
-end
-
-function omega_minus(k, delta)
-    k = mod(k + π, 2π) - π
-    A = sqrt(max(1 - (1 - delta^2) * sin(k/2)^2, 0.0))
-    sqrt(max(2 - 2A, 0.0))
-end
+# Dispersión en forma compacta (κ* = 1 - Δκ²) — ec. (9) del paper, en Dispersion
+const omega_plus  = Dispersion.omega_compact_plus
+const omega_minus = Dispersion.omega_compact_minus
 
 # Residuo de la condición de resonancia ω₋(k₁) + ω₋(k₂) = ω₊(k₃)
 function resonance_residual(k1, k2, delta)
@@ -92,7 +85,6 @@ end
 function plot_multiple_resonance(N, delta_values;
                                   linestyles = [:solid, :dash, :dashdot, :dot, :dashdotdot],
                                   guidefs=14, tickfs=11, legendfs=12)
-    colors = [:darkblue, :steelblue, :cornflowerblue, :deepskyblue, :lightblue]
     p = plot(legend=:topright,
              guidefont  = font(guidefs),
              tickfont   = font(tickfs),
@@ -102,8 +94,8 @@ function plot_multiple_resonance(N, delta_values;
     add_klapp_umklapp_regions!(p)   # ← NUEVA línea, antes del loop
 
     for (i, delta) in enumerate(delta_values)
-        col = colors[mod1(i, length(colors))]
-        ls  = linestyles[mod1(i, length(linestyles))]
+        col = cyc(PALETTE_DELTA, i)
+        ls  = cyc(linestyles, i)
 
         plot_resonance!(p, N, delta;
                         label    = nothing,

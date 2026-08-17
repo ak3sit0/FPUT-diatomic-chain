@@ -1,6 +1,7 @@
 using LinearAlgebra, CairoMakie, LaTeXStrings
-include("../../src/fput_coupling.jl")
-using .FPUTCoupling
+include("../../src/fput_coupling.jl");   using .FPUTCoupling
+include("../../src/fput_analysis.jl");   using .FPUTAnalysis
+include("../../src/plotting_utils.jl");  using .PlottingUtils
 
 function plot_aao_delta_sweep(delta_values, alfa; Nk=601, Ngrid=201)
     kplot = collect(range(-π, π, length=Ngrid)) # Range of values of k to plot
@@ -31,12 +32,12 @@ function plot_aao_delta_sweep(delta_values, alfa; Nk=601, Ngrid=201)
                   xlabelsize=27, ylabelsize=27, titlesize=30)
 
         last_hm = heatmap!(ax, kplot, kplot, Gaao;
-                           colorrange=(0, global_max), colormap=:Blues,
+                           colorrange=(0, global_max), colormap=PALETTE_COUPLING,
                            rasterize=4)
 
         # Curva de resonancia aao: s1=1(a), s2=1(a), s3=2(o)
         D = resonance_matrix(kplot, kA, kB, 1, 1, 2)
-        contour!(ax, kplot, kplot, D; levels=[0.0], color=:orangered, linewidth=2.5)
+        contour!(ax, kplot, kplot, D; levels=[0.0], color=RESONANCE_LINE, linewidth=2.5)
     end
 
     # Barra de color compartida

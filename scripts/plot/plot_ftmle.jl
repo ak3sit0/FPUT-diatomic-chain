@@ -12,7 +12,9 @@ Usage:
 """
 
 using JLD2, Plots, LaTeXStrings, Statistics, Dates
-import Plots: mm, RGB
+import Plots: mm
+include("../../src/fput_analysis.jl");  using .FPUTAnalysis
+include("../../src/plotting_utils.jl"); using .PlottingUtils
 
 function apply_global_plot_style!()
     default(titlefont = font(16), guidefont = font(14),
@@ -57,16 +59,6 @@ function fit_powerlaw(t, lam; t_max=1e4, n_bins=20)
     return exp(intercept), -slope
 end
 
-# Paleta de azules con contraste: oscuro → medio → teal → violeta-azul → cian
-const PALETTE = [
-    RGB(0.20, 0.60, 0.86),   # azul claro vivo
-    RGB(0.13, 0.47, 0.71),   # azul medio
-    RGB(0.10, 0.65, 0.76),   # azul teal
-    RGB(0.35, 0.22, 0.65),   # azul-violeta
-    RGB(0.05, 0.50, 0.50),   # teal oscuro
-]
-const LINESTYLES = [:dot, :dash, :dashdot, :dashdotdot, :solid]
-
 const DELTA_REF = 0.05   # caso del que se toma la referencia
 
 function main()
@@ -98,8 +90,8 @@ function main()
     ref_t1 = nothing
 
     for (k, ftmle_path) in enumerate(ftmle_paths)
-        color = PALETTE[mod1(k, length(PALETTE))]
-        ls    = LINESTYLES[mod1(k, length(LINESTYLES))]
+        color = cyc(FTMLE_PALETTE, k)
+        ls    = cyc(FTMLE_LINESTYLES, k)
 
         d_f     = load(ftmle_path)
         t_cyc   = Float64.(d_f["t_cycles"])

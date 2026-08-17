@@ -1,4 +1,7 @@
 using LinearAlgebra, Plots, LaTeXStrings
+include("../../src/dispersion.jl");      using .Dispersion
+include("../../src/fput_analysis.jl");   using .FPUTAnalysis
+include("../../src/plotting_utils.jl");  using .PlottingUtils
 gr()
 
 # estética común
@@ -15,29 +18,19 @@ k_reduced = range(0.0, stop=π/a, length=1200)
 # Δκ para la dispersión (spring constant disorder)
 # κ₁ = 1 + Δκ, κ₂ = 1 - Δκ
 Δκ_values_dispersion = [0.1, 0.3, 0.6, 0.9]
-linestyles = [:solid, :dash, :dot, :dashdot]
-colors = [:darkblue, :steelblue, :royalblue, :cornflowerblue]
-linewidths = [2.4, 2.9, 3.3, 3.6]   # shades of blue with increasing width
 
-# funciones auxiliares para diatomic chain con spring disorder
+"""
+    compute_frequencies(Δκ, k, a, m) -> (ω_optical, ω_acoustic)
+
+Ambas ramas para κ₁ = 1 + Δκ, κ₂ = 1 - Δκ. La dispersión vive en
+`src/dispersion.jl`; aquí sólo se reescala por la masa (m = 1 en `Dispersion`).
+"""
 function compute_frequencies(Δκ::Float64, k_reduced::AbstractVector,
                              a::Float64, m::Float64)
-    # Spring constants: κ₁ = 1 + Δκ, κ₂ = 1 - Δκ
-    κ₁ = 1.0 + Δκ
-    κ₂ = 1.0 - Δκ
-    
-    # Diatomic chain dispersion with alternating springs
-    # ω² = (κ₁ + κ₂)/m ± √[(κ₁ + κ₂)² - 4κ₁κ₂sin²(ka/2)]/m
-    κ_sum = κ₁ + κ₂
-    κ_prod = κ₁ * κ₂
-    
-    discriminant = κ_sum^2 .- 4 .* κ_prod .* sin.(k_reduced .* a ./ 2).^2
-    sqrtterm = sqrt.(max.(discriminant, 0.0))
-    
-    ω2_optical = (κ_sum .+ sqrtterm) ./ m      # optical branch
-    ω2_acoustic = (κ_sum .- sqrtterm) ./ m     # acoustic branch
-    
-    sqrt.(ω2_optical), sqrt.(max.(ω2_acoustic, 0.0))
+    κ₁, κ₂ = 1.0 + Δκ, 1.0 - Δκ
+    scale = 1 / sqrt(m)
+    scale .* Dispersion.omega_op.(k_reduced .* a, κ₁, κ₂),
+    scale .* Dispersion.omega_ac.(k_reduced .* a, κ₁, κ₂)
 end
 
 function plot_dispersion(Δκ_values::Vector{Float64},
@@ -58,14 +51,10 @@ function plot_dispersion(Δκ_values::Vector{Float64},
     
     # Plot data
     for (i, (ω_opt, ω_ac)) in enumerate(freq_data)
-        ls = linestyles[mod1(i, length(linestyles))]
-        col = colors[mod1(i, length(colors))]
-        lw = linewidths[mod1(i, length(linewidths))]
-        κ₁ = 1.0 + Δκ_values[i]
-        κ₂ = 1.0 - Δκ_values[i]
-        #lbl = L"\Delta \kappa = %$(Δκ_values[i]) \quad (\kappa_1, \kappa_2) = (%.1f, %.1f)" |> 
-        #      x -> replace(x, "%.1f" => string(round(κ₁, digits=1)))
-        
+        ls  = cyc(LINESTYLES, i)
+        col = cyc(PALETTE_DELTA, i)
+        lw  = cyc(LINEWIDTHS, i)
+
         # Legend entry with invisible line
         plot!(p, [0, 0], [0, 0], label=L"\Delta \kappa = %$(Δκ_values[i])", 
               linestyle=ls, color=col, linewidth=1.2, marker=:none)

@@ -11,12 +11,9 @@ Usage:
 
 using Plots, JLD2, LaTeXStrings
 import Plots: mm
-include("../../src/config.jl"); using Main.Config
-include("../../src/fput_analysis.jl"); using .FPUTAnalysis
-
-const SMOOTH_DELTA = 0.6
-const EPS = 1e-18
-const LINESTYLES = [:solid, :dash, :dot, :dashdot, :dashdotdot]
+include("../../src/config.jl");         using .Config
+include("../../src/fput_analysis.jl");  using .FPUTAnalysis
+include("../../src/plotting_utils.jl"); using .PlottingUtils
 
 struct ProcessedRun
     delta::Float64
@@ -34,46 +31,16 @@ function build_plot_config(input_arg::Union{String,Nothing})
     end
 end
 
-function smooth_modal_energies(modal_E::AbstractMatrix, delta::Float64)
-    smoothed = similar(modal_E, Float64)
-    for i in 1:size(modal_E, 1)
-        smoothed[i, :] = FPUTAnalysis.sliding_window_avg(Float64.(modal_E[i, :]), delta)
-    end
-    smoothed
-end
-
-function entropy_from_smooth(E_smooth)
-    total_E = sum(E_smooth, dims=1)
-    p = E_smooth ./ (total_E .+ EPS)
-    p_safe = p .+ (p .== 0.0)
-    -vec(sum(p .* log.(p_safe), dims=1))
-end
-
-function compute_entropy_smooth(modal_E::Matrix; delta::Float64=SMOOTH_DELTA)
-    entropy_from_smooth(smooth_modal_energies(modal_E, delta))
-end
-
-
 function load_modal_results(path::String)
     isfile(path) || error("File not found: $path")
     println("Loading: $path")
     data = load(path)
-    results = data["results"]
-    config = data["config"]
-    if isa(config, String) && isfile(config)
-        config = Config.load_experiment_config(config)
-    end
-    return results, config
+    return data["results"], Config.as_experiment_config(data["config"])
 end
 
 function prepare_run(res)
-    t_full = Float64.(Vector(res.scaled_t))
-    E_full = Float64.(Matrix(res.modal_E))
-    if size(E_full, 1) > size(E_full, 2)
-        E_full = E_full'
-    end
-    idx = findall(>(1e-3), t_full)
-    ProcessedRun(Float64(res.Delta), t_full[idx], E_full[:, idx])
+    t, E = prepare_ts(res)
+    ProcessedRun(Float64(res.Delta), t, E)
 end
 
 function group_results_by_param(results)
@@ -126,8 +93,8 @@ function plot_entropy_for_param(param_val, runs, config, delta_smooth, outdir_en
             continue
         end
 
-        S = compute_entropy_smooth(run.modal_E; delta = delta_smooth)
-        style = LINESTYLES[mod1(j, length(LINESTYLES))]
+        S = entropy_series(run.modal_E; delta = delta_smooth)
+        style = cyc(LINESTYLES, j)
         label_str = label_for_delta(config, run.delta)
 
         plot!(p_S, run.times, S, label = label_str, lw = 2.0, linestyle = style, alpha = 0.8)

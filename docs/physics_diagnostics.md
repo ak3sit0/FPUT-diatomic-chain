@@ -36,7 +36,19 @@ El Fix 2 de orientación de matriz garantiza que esta simetría se refleja corre
 
 ## Doble formula de dispersión ω(k) — riesgo de divergencia silenciosa
 
-**Estado:** No verificado — solo señalado, sin evidencia de que actualmente difieran.
+**Estado:** Verificado (2026-08-16) — **no divergen hoy**; el riesgo es futuro.
+
+Comparación numérica sobre k ∈ [-π,π] (1201 puntos) y Δκ ∈ {0, 0.05, 0.1, 0.3, 0.5, 0.7, 0.9}:
+
+| Comparación | max \|Δω\| |
+|---|---|
+| `FPUTCoupling.omega_branch` vs `Dispersion.omega_ac`/`omega_op` | **0.0** (bit-idénticas) |
+| forma compacta (`omega_compact_±`) vs forma absoluta | ~1e-15 |
+| fórmula local de `plot_dispersion_relation.jl` vs ambas | ~1e-15 |
+
+La tercera copia (la que vivía inline en `examples/dispersion/plot_dispersion_relation.jl` y en
+`examples/resonance/plot_resonance_level_curves.jl`) **ya fue eliminada**: ambos scripts llaman
+ahora a `src/dispersion.jl`. Quedan dos implementaciones (`Dispersion` y `FPUTCoupling.omega_branch`).
 
 `src/dispersion.jl` (`omega_ac`, `omega_op`) y `src/fput_coupling.jl` (`omega_branch`) calculan la misma física — la dispersión ω(k) de la cadena diatómica — con fórmulas escritas independientemente en dos parametrizaciones distintas (κ₁,κ₂ absolutos vs Δκ compacto). No están unificadas: un cambio futuro en una convención (p.ej. signo de disc, definición de κ*) puede divergir silenciosamente de la otra sin que ningún test lo detecte, porque cada módulo se usa en scripts distintos y nada los compara entre sí.
 
@@ -45,3 +57,24 @@ El Fix 2 de orientación de matriz garantiza que esta simetría se refleja corre
 ## Inconsistencia de esquema entre `compute_ensemble.jl` y `compute_ensemble_Nsweep.jl`
 
 `compute_ensemble_Nsweep.jl` no calcula `T_therm_*` (tiempo de termalización), a diferencia de `compute_ensemble.jl`. Los scripts de plotting que consumen ambos formatos (`plot_ensemble_results.jl`, `plot_thermalization_time.jl`) asumen implícitamente que ese campo existe — si algún día se apunta `plot_thermalization_time.jl` a un resultado de `compute_ensemble_Nsweep.jl`, fallará o dará datos incompletos sin previo aviso. No es un bug de física en sí, pero afecta la interpretación de qué corridas son comparables entre sí.
+
+
+## Dos definiciones distintas de "tiempo de termalización"
+
+**Severidad: media** — afecta a la interpretación de las figuras, no a las simulaciones.
+
+Conviven dos estimadores distintos de T_th bajo el mismo nombre:
+
+| Dónde | Definición |
+|---|---|
+| `compute_ensemble.jl` → campos `T_therm_*` del JLD2 | umbral sobre la **entropía normalizada** por realización |
+| `PlottingUtils.thermalization_time`, usado por `plot_ensemble_results.jl` y `plot_thermalization_time.jl` | primer t en que **E_optical** alcanza el 90% de su valor asintótico |
+
+Consecuencia concreta: `plot_ensemble_results.jl` **ignora los campos `T_therm_*` que el JLD2 ya
+trae** y recomputa T_th con la otra definición. Las dos cantidades no son comparables entre sí, y
+la figura "Thermalization time vs Δκ" no muestra lo que `compute_ensemble.jl` registró.
+
+Dado el hallazgo de memoria de que la subida de entropía es **intra-acústica** (E_opt/E ≈ 0 en
+todos los Δκ para los casos de referencia), la definición basada en E_optical es sospechosa en ese
+régimen: si la banda óptica nunca se llena, "el 90% del valor asintótico de E_opt" mide ruido.
+Conviene decidir cuál es la definición canónica antes de usar estas figuras en el paper.

@@ -4,7 +4,7 @@ using TOML
 
 export ExperimentConfig, PlotConfig,
        load_experiment_config, load_plot_config,
-       default_plot_config
+       default_plot_config, resolve_config_path, as_experiment_config
 
 struct ExperimentConfig
     system_type::Symbol
@@ -21,6 +21,48 @@ function load_experiment_config(path::String)::ExperimentConfig
         Symbol(p["boundary"]),
         Symbol(p["nonlinear"]),
     )
+end
+
+const CONFIG_DIRS = ("configs/production", "configs/hpc_templates", "configs/tests", "configs")
+
+"""
+    resolve_config_path(path) -> String | nothing
+
+Locate a config TOML whose recorded path may be stale. Results saved before the
+`configs/cases/` → `configs/production/` reorganization store paths like
+`configs/cases/periodic_N64_production.toml`; this falls back to a basename
+lookup (with and without the dropped `_production` suffix) across `configs/`.
+Returns `nothing` when no candidate exists.
+"""
+function resolve_config_path(path::AbstractString)
+    isfile(path) && return String(path)
+    base = basename(path)
+    candidates = unique([base, replace(base, "_production.toml" => ".toml")])
+    for dir in CONFIG_DIRS, c in candidates
+        p = joinpath(dir, c)
+        isfile(p) && return p
+    end
+    nothing
+end
+
+"""
+    as_experiment_config(config; fallback=ExperimentConfig(:springs, :periodic, :alpha))
+
+Normalize the `config` entry stored in a results JLD2 — either an
+`ExperimentConfig` or a (possibly stale) path string — into an
+`ExperimentConfig`. Warns and returns `fallback` when the path cannot be
+resolved, so plotting degrades to a default label instead of erroring on a
+`String` that has no fields.
+"""
+function as_experiment_config(config;
+                              fallback::ExperimentConfig = ExperimentConfig(:springs, :periodic, :alpha))
+    config isa ExperimentConfig && return config
+    if config isa AbstractString
+        resolved = resolve_config_path(config)
+        isnothing(resolved) || return load_experiment_config(resolved)
+        @warn "Config referenced by the results file was not found; using defaults for labels/filenames" path=config fallback
+    end
+    fallback
 end
 
 struct PlotConfig
