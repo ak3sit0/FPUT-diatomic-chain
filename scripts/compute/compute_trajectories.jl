@@ -49,6 +49,8 @@ function run_case(spec, task)
        init_type = spec.init_type, excited = case.excited)
 end
 
+# Mirrors the energy-convention branch inside Experiment.resolve_budget: report the
+# same ε the run will actually use, whichever of the two policy fields is active.
 spec_epsilon(spec, N) = isnothing(spec.energy_density) ? spec.E_total / N : spec.energy_density
 
 function main()

@@ -42,13 +42,15 @@ so the caller can drop it instead of poisoning the ensemble average.
 function run_realization(case::Case, spec, seed::Integer, label::AbstractString)
     E_ac_blocks, E_opt_blocks = Vector{Vector{Float64}}(), Vector{Vector{Float64}}()
 
+    # idx_ds selects the (downsampled) saved columns within this block's modal_Eb;
+    # summing over case.k_ac/k_opt rows collapses per-mode energy to per-band energy.
     on_block = (modal_Eb, idx_ds) -> begin
         push!(E_ac_blocks, vec(sum(modal_Eb[case.k_ac, idx_ds], dims = 1)))
         isempty(case.k_opt) || push!(E_opt_blocks, vec(sum(modal_Eb[case.k_opt, idx_ds], dims = 1)))
     end
 
     check_instability = modal_Eb -> begin
-        E_cur = sum(@view modal_Eb[:, end])
+        E_cur = sum(@view modal_Eb[:, end])  # total energy at the block's last saved column
         bad = E_cur > 100 * case.budget.E_total || !isfinite(E_cur)
         bad && println("  $label INSTABILITY (E=$(round(E_cur; sigdigits=3)) vs E_total=$(case.budget.E_total)); aborting")
         bad
@@ -84,15 +86,15 @@ Note this is *not* the same quantity as `PlottingUtils.thermalization_time`,
 which thresholds the optical energy instead — see `docs/physics_diagnostics.md`.
 """
 function thermalization_stats(entropies, scaled_t, k_band, N)
-    f   = 1 - 1/ℯ 
-    S0  = log(length(k_band))
-    ΔS  = log(N) - S0
+    f   = 1 - 1/ℯ
+    S0  = log(length(k_band))  # entropy of a delta-like distribution confined to k_band
+    ΔS  = log(N) - S0          # full rise from band-confined to fully equipartitioned
 
     T_vec = map(entropies) do S_r
-        nt     = min(length(S_r), length(scaled_t))
-        S_norm = (S_r[1:nt] .- S0) ./ ΔS
-        idx    = findfirst(>(f), S_norm)
-        isnothing(idx) ? Inf : scaled_t[idx]
+        nt     = min(length(S_r), length(scaled_t))  # guard against off-by-one length mismatches
+        S_norm = (S_r[1:nt] .- S0) ./ ΔS              # rescaled to [0, 1] regardless of N or k_band
+        idx    = findfirst(>(f), S_norm)              # first sample crossing the 1-1/e threshold
+        isnothing(idx) ? Inf : scaled_t[idx]          # never thermalized within the run ⇒ Inf
     end
 
     finite = filter(isfinite, T_vec)
@@ -132,13 +134,15 @@ function run_ensemble_case(spec, task, inner_parallel::Bool)
     t_ref = nothing
     n_ok  = 0
 
-    batch = inner_parallel ? max(nthreads(), 1) : 1
+    batch = inner_parallel ? max(nthreads(), 1) : 1  # batch=1 ⇒ effectively a plain serial loop
     for start in 1:batch:spec.n_real
-        rs    = start:min(start + batch - 1, spec.n_real)
+        rs    = start:min(start + batch - 1, spec.n_real)  # last batch may be shorter than nthreads()
         tasks = Vector{Any}(undef, length(rs))
 
         for (i, r) in enumerate(rs)
             lbl = "[$label_case r=$r/$(spec.n_real)]"
+            # spec.seed_base + r (not i or start+i) keeps each realization's seed tied to its
+            # global index r, so results are reproducible regardless of batch size/thread count.
             tasks[i] = inner_parallel ?
                 Threads.@spawn(run_realization(case, spec, spec.seed_base + r, lbl)) :
                 run_realization(case, spec, spec.seed_base + r, lbl)
@@ -156,9 +160,13 @@ function run_ensemble_case(spec, task, inner_parallel::Bool)
             t_ref = res.scaled_t
 
             if isnothing(modal_acc)
+                # copy(): res.modal_E is owned by this realization's integration buffer and
+                # would otherwise get mutated/reused by a later thread.
                 modal_acc, E_ac_acc, E_opt_acc =
                     copy(res.modal_E), copy(res.E_acoustic), copy(res.E_optical)
             else
+                # An unstable/aborted realization can save fewer blocks than its predecessors,
+                # so accumulate only over the common (shortest) length seen so far.
                 nt = min(size(res.modal_E, 2), size(modal_acc, 2))
                 modal_acc = modal_acc[:, 1:nt] .+ res.modal_E[:, 1:nt]
                 E_ac_acc  = _accumulate(E_ac_acc, res.E_acoustic)
@@ -170,14 +178,14 @@ function run_ensemble_case(spec, task, inner_parallel::Bool)
     n_ok == 0 && (println("[$label_case] all realizations unstable; case discarded"); return nothing)
     n_ok < spec.n_real && println("  Warning: only $n_ok/$(spec.n_real) realizations stable")
 
-    modal_acc ./= n_ok
+    modal_acc ./= n_ok  # elementwise mean over the n_ok stable realizations (division, not sum)
     E_ac_acc  ./= n_ok
-    E_opt_acc ./= n_ok
+    E_opt_acc  ./= n_ok
 
-    nt_min  = minimum(length, entropies)
-    ent_mat = reduce(hcat, [e[1:nt_min] for e in entropies])'
-    S_mean  = vec(mean(ent_mat, dims = 1))
-    S_std   = vec(std(ent_mat, dims = 1))
+    nt_min  = minimum(length, entropies)                        # shortest surviving trajectory
+    ent_mat = reduce(hcat, [e[1:nt_min] for e in entropies])'    # hcat stacks as columns, so
+    S_mean  = vec(mean(ent_mat, dims = 1))                       # the trailing ' makes rows =
+    S_std   = vec(std(ent_mat, dims = 1))                        # realizations, dims=1 reduces those
 
     th = thermalization_stats(entropies, t_ref, case.excited, case.N)
 
@@ -191,7 +199,7 @@ function run_ensemble_case(spec, task, inner_parallel::Bool)
        modal_E_mean = modal_acc,
        E_acoustic_mean = E_ac_acc, E_optical_mean = E_opt_acc,
        entropy_realizations = entropies, E_optical_realizations = E_opt_reals,
-       th...,
+       th...,  # splices T_therm_mean/std/median/vec, frac_therm, n_therm, threshold_f in place
        n_real = spec.n_real, seed_base = spec.seed_base,
        branch = spec.branch, k_band = case.excited,
        E_total = b.E_total, energy_density = b.E_total / case.N,
@@ -199,6 +207,8 @@ function run_ensemble_case(spec, task, inner_parallel::Bool)
        init_type = spec.init_type)
 end
 
+# Sums, truncating to the shorter of the two (see the aborted-realization note above);
+# either side can be empty when a case has no optical band (fixed boundary), so pass acc through.
 _accumulate(acc, new) = isempty(acc) || isempty(new) ? acc :
                         (nt = min(length(acc), length(new)); acc[1:nt] .+ new[1:nt])
 

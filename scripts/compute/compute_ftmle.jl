@@ -37,9 +37,9 @@ function run_ftmle(case::Case, q_ref, v_ref, dt::Float64;
     # Random unit perturbation in the 2N-dimensional phase space
     rng = MersenneTwister(rng_seed)
     dv  = randn(rng, 2N)
-    dv ./= norm(dv)
-    q_per = q_ref .+ delta0 .* dv[1:N]
-    v_per = v_ref .+ delta0 .* dv[N+1:end]
+    dv ./= norm(dv)  # normalize so its scale is set entirely by delta0 below
+    q_per = q_ref .+ delta0 .* dv[1:N]      # first N components perturb the positions
+    v_per = v_ref .+ delta0 .* dv[N+1:end]  # remaining N perturb the velocities
 
     n_chunks = Int(ceil(T_max / T_renorm))
     t_vec    = Vector{Float64}(undef, n_chunks)
@@ -51,23 +51,27 @@ function run_ftmle(case::Case, q_ref, v_ref, dt::Float64;
 
     for i in 1:n_chunks
         t_next = t + T_renorm
+        # saveat=[t_next] only: each call to solve_fput here only needs the chunk's
+        # endpoint, not the intermediate trajectory, so nothing else is stored.
         Q1, V1, _, _, _ = solve_fput(sp, q_ref, v_ref, (t, t_next), dt; saveat = [t_next])
         Q2, V2, _, _, _ = solve_fput(sp, q_per, v_per, (t, t_next), dt; saveat = [t_next])
 
-        q_ref, v_ref = Q1[:, end], V1[:, end]
+        q_ref, v_ref = Q1[:, end], V1[:, end]  # reference trajectory advances unperturbed
         Δq = Q2[:, end] .- q_ref
         Δv = V2[:, end] .- v_ref
-        d  = norm(vcat(Δq, Δv))
+        d  = norm(vcat(Δq, Δv))  # phase-space separation after this chunk
 
-        Λ += log(d / delta0)
+        Λ += log(d / delta0)  # accumulated log-growth; Benettin's telescoping sum
         t  = t_next
-        t_vec[i], λ_vec[i] = t, Λ / t
+        t_vec[i], λ_vec[i] = t, Λ / t  # running average, not the instantaneous rate
 
-        # Renormalize: bring the perturbed trajectory back to distance delta0
+        # Renormalize: rescale the separation vector (Δq, Δv) back to length delta0,
+        # keeping its direction — this is what prevents the perturbed trajectory from
+        # diverging out of the linear regime while still tracking the fastest-growing mode.
         q_per = q_ref .+ (delta0 / d) .* Δq
         v_per = v_ref .+ (delta0 / d) .* Δv
 
-        if mod(i, max(1, n_chunks ÷ 10)) == 0
+        if mod(i, max(1, n_chunks ÷ 10)) == 0  # progress print roughly every 10% of chunks
             println("  chunk $i/$n_chunks  t=$(round(t; digits=1))  λ=$(round(Λ/t; sigdigits=4))")
             flush(stdout)
         end
@@ -79,11 +83,11 @@ end
 function save_result(spec, case, config_path, T_max, t_vec, λ_vec)
     outdir = joinpath(spec.base_dir, "ftmle")
     mkpath(outdir)
-    tag  = replace(string(case.delta), "." => "p")
+    tag  = replace(string(case.delta), "." => "p")  # "0.1" → "0p1", filesystem-safe
     path = joinpath(outdir, "ftmle_$(spec.boundary)_delta$(tag)_$(Dates.today()).jld2")
     jldsave(path;
         t_physical  = t_vec,
-        t_cycles    = t_vec .* case.omega_ref ./ (2π),
+        t_cycles    = t_vec .* case.omega_ref ./ (2π),  # physical time rescaled to reference-mode cycles
         lambda      = λ_vec,
         omega_ref   = case.omega_ref,
         delta_k     = case.delta,
@@ -118,7 +122,7 @@ function main()
     println("Cases: Δκ = $deltas   N=$N   ($(nthreads()) threads)")
     flush(stdout)
 
-    @threads for Δ in deltas
+    @threads for Δ in deltas  # each Δκ is independent, so this parallelizes trivially over threads
         case   = build_case(spec, N, param, Δ)
         q0, v0 = initial_condition(case, spec, spec.seed_base)
         t_vec, λ_vec = run_ftmle(case, q0, v0, spec.DT;
