@@ -59,19 +59,24 @@ end
 function prepare_panel_data(result, cfg)
     t_raw = Float64.(result.scaled_t)
     z_raw = result.modal_E
+    # modal_E is sometimes saved as (modes × time) and sometimes (time × modes);
+    # heatmap! expects (time, modes) as its axes, so ensure z_raw is (modes × time).
     size(z_raw, 1) > size(z_raw, 2) && (z_raw = permutedims(z_raw))
 
-    # Window to the time range, then subsample. Slice once to avoid multiple copies.
+    # Window to the time range, then subsample. Slice once (idx computed once, reused)
+    # to avoid allocating multiple copies of the same range.
     idx = findall(t -> cfg.t_min <= t <= cfg.t_max, t_raw)
-    cfg.time_subsample > 1 && (idx = idx[1:cfg.time_subsample:end])
+    cfg.time_subsample > 1 && (idx = idx[1:cfg.time_subsample:end])  # keep every n-th sample
 
     t_vals = t_raw[idx]
     z_plot = clamp.(Float64.(z_raw[:, idx]), cfg.clamp_min, cfg.clamp_max)
 
-    # Log-scale x axis: push non-positive times a decade below the smallest positive one.
+    # Log-scale x axis: non-positive times (t≤0) can't be plotted on log10; push them
+    # to one decade below the smallest positive time so they appear at the left edge
+    # but don't interfere with the scale.
     if any(<=(0), t_vals)
         pos = filter(>(0), t_vals)
-        floor_t = isempty(pos) ? 1e-12 : minimum(pos) / 10
+        floor_t = isempty(pos) ? 1e-12 : minimum(pos) / 10  # fallback if all times ≤ 0
         t_vals = [t <= 0 ? floor_t : t for t in t_vals]
     end
 
@@ -92,12 +97,16 @@ time to place on a log axis.
 """
 function decade_ticks(t_vals)
     (isempty(t_vals) || !any(>(0), t_vals)) && return nothing
+    # Try to place ticks *strictly inside* [t_vals[1], t_vals[end]]; generate all powers in that range.
     xt = [10.0^e for e in 0:floor(Int, log10(t_vals[end])) if t_vals[1] <= 10.0^e <= t_vals[end]]
     if isempty(xt)
+        # No powers of 10 fit inside; widen to the enclosing decade boundaries so there's
+        # at least one tick per decade visible.
         lo = floor(Int, log10(minimum(filter(>(0), t_vals))))
         hi = ceil(Int, log10(t_vals[end]))
         xt = [10.0^e for e in lo:hi]
     end
+    # Format: x ≥ 1 as integer (e.g., "100"), smaller values as full float (e.g., "0.1").
     xt, [x >= 1 ? string(Int(x)) : string(x) for x in xt]
 end
 
@@ -115,21 +124,23 @@ function make_panel_axis(ga, row, col, panel::PanelData, dataset::HeatmapDataset
         xticklabelfont     = cfg.font,
         yticklabelsize     = cfg.ticksize,
         yticklabelfont     = cfg.font,
-        xticklabelsvisible = row == n_rows,
-        yticklabelsvisible = col == 1,
-        xscale             = isnothing(ticks) ? identity : log10,
+        xticklabelsvisible = row == n_rows,  # show x labels only on bottom row
+        yticklabelsvisible = col == 1,       # show y labels only on left column
+        xscale             = isnothing(ticks) ? identity : log10,  # log-scale if decade ticks exist
         yticks             = (y_tick_coords, [string(round(Int, y)) for y in y_tick_coords]),
-        # Makie treats `automatic` as "pick your own"; only override when we have decades.
-        (isnothing(ticks) ? () : (xticks = ticks,))...,
+        # Makie uses `automatic` (default) when xticks is omitted; only override when decade_ticks succeeded.
+        (isnothing(ticks) ? () : (xticks = ticks,))...,  # splat empty tuple if ticks unavailable
     )
 end
 
 function render_heatmap_panel!(ax, panel::PanelData, cfg)
+    # panel.z_plot is (modes × time); heatmap! takes (x, y, matrix) and plots matrix[y, x],
+    # so transpose to get (time × modes) order.
     hm = heatmap!(ax, panel.t_vals, panel.mode_range, panel.z_plot';
         colormap = cgrad(BLUES_STOPS),
-        colorscale = cfg.color_scale == :log ? log10 : identity,
+        colorscale = cfg.color_scale == :log ? log10 : identity,  # rescale data for color mapping
         colorrange = cfg.color_scale == :log ? (cfg.clamp_min, cfg.clamp_max) : (0.0, cfg.clamp_max),
-        rasterize = 4,
+        rasterize = 4,  # rasterization level for antialiasing (4 = aggressive)
     )
     xlims!(ax, panel.t_vals[1], panel.t_vals[end])
     ylims!(ax, first(panel.mode_range) - 0.5, last(panel.mode_range) + 0.5)
@@ -137,12 +148,14 @@ function render_heatmap_panel!(ax, panel::PanelData, cfg)
 end
 
 function add_labels_and_colorbar!(fig, ga, hm_ref, cfg)
+    # Position axis labels outside the grid: Bottom() and Left() place them relative to fig[1,1].
     Label(fig[1, 1, Bottom()], "Scaled Time";
         fontsize = cfg.labelsize, padding = (0, 0, 0, 40), font = cfg.font)
     Label(fig[1, 1, Left()], "Mode Index";
         fontsize = cfg.labelsize, rotation = pi/2, padding = (0, 60, 0, 0), font = cfg.font)
 
     is_log = cfg.color_scale == :log
+    # Colorbar takes hm_ref (the heatmap reference) to inherit its color scale; place it in fig[1, 2].
     Colorbar(fig[1, 2], hm_ref;
         label         = is_log ? "Log10(Energy)" : "Energy",
         labelsize     = cfg.labelsize,
@@ -150,6 +163,7 @@ function add_labels_and_colorbar!(fig, ga, hm_ref, cfg)
         ticklabelsize = cfg.ticksize,
         ticklabelfont = cfg.font,
         width         = 36,
+        # When log-scale, set explicit ticks and custom formatting (exponent notation is clearer than decimals).
         (is_log ? (ticks = [1e-6, 1e-4, 1e-2, 1.0],
                    tickformat = _ -> ["10^-6", "10^-4", "10^-2", "1"]) : ())...,
     )
@@ -168,6 +182,8 @@ function build_heatmap_figure(dataset::HeatmapDataset, cfg)
 
     hm_ref = nothing
     for i in 1:n_rows
+        # n_rows - i + 1: reverse the parameter order so largest param appears at the top
+        # of the grid (following the print convention of highest values first).
         param = dataset.param_values[n_rows - i + 1]
         for j in 1:n_cols
             delta = dataset.delta_values[j]

@@ -27,11 +27,11 @@ function parse_args(args)
     i = 1
     while i <= length(args)
         if args[i] == "--param"
-            param = parse(Float64, args[i+1]); i += 2
+            param = parse(Float64, args[i+1]); i += 2  # skip both the flag and its value
         elseif args[i] == "--delta"
             delta = parse(Float64, args[i+1]); i += 2
         else
-            push!(paths, args[i]); i += 1
+            push!(paths, args[i]); i += 1  # positional argument ⇒ a file path
         end
     end
     (isnothing(param) || isnothing(delta) || isempty(paths)) && error(USAGE)
@@ -46,7 +46,9 @@ recorded in the sweep's config TOML (single-N sweep files fix N for every run
 and don't repeat it per result).
 """
 function result_N(res, config_path)
-    hasproperty(res, :N) && return res.N
+    hasproperty(res, :N) && return res.N  # per-result N (multi-N sweeps) takes precedence
+    # Fallback: parse the config TOML for a single fixed N recorded in every sweep file.
+    # This branch is taken only when results have no :N field (single-N production sweeps).
     resolved = Config.resolve_config_path(config_path)
     isnothing(resolved) && error("Cannot determine N: no per-result field and config path unresolved ($config_path)")
     TOML.parsefile(resolved)["physics"]["N"]
@@ -71,7 +73,8 @@ function size_curves(paths, param, delta)
     curves = Curve[]
     for (j, m) in enumerate(matches)
         t, E = prepare_ts(m.res)
-        t, S = logdownsample(t, entropy_series(E))
+        t, S = logdownsample(t, entropy_series(E))  # no custom delta (use default) since we're
+                                                     # just comparing N sweeps, not parameter sweeps
         push!(curves, Curve(t, S, latexstring("N = $(m.N)"); cyclic(j)...))
         println("  ✓ N=$(m.N) ($(length(t)) points)")
     end

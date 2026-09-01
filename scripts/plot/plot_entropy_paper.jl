@@ -31,6 +31,8 @@ result matching Δκ across `paths` — lets a base sweep be extended with extra
 runs without overriding it. Missing Δκ are reported and skipped.
 """
 function paper_curves(paths, spec)
+    # load_results_by_delta merges all files, keyed by Δκ; the dict preserves the first
+    # occurrence, so a base file's data takes precedence over extended extras.
     by_delta = load_results_by_delta(paths...)
     curves = Curve[]
     for (d, color, ls, lw) in spec
@@ -55,6 +57,7 @@ function main()
     save_fig(fig([fbc_path], SPEC_FBC), OUTDIR, "fig_entropy_FBC")
 
     println("\nPBC ($(basename(pbc_paths[1]))):")
+    # pbc_paths[1:1] extracts only the first PBC file; prevents accidental merging if extra files exist.
     save_fig(fig(pbc_paths[1:1], SPEC_PBC), OUTDIR, "fig_entropy_PBC")
 
     if length(pbc_paths) > 1

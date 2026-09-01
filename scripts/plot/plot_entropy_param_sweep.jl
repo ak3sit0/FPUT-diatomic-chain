@@ -26,6 +26,8 @@ plot_config(arg::AbstractString) =
 
 """Results passing the config's param/Δ filters; an empty filter keeps everything."""
 function select(results, pcfg)
+    # isapprox with rtol=1e-6 tolerates TOML float parse -> Julia float round-trip; empty
+    # allowed list means no filter (all results pass), matching common "unspecified = keep all" idiom.
     keep(v, allowed) = isempty(allowed) ||
                        any(a -> isapprox(Float64(v), a; rtol = 1e-6), allowed)
     filter(r -> keep(r.param, pcfg.filter_params) &&
@@ -53,15 +55,16 @@ S̄(t) for each run, styled cyclically. Runs with no positive timestamp cannot g
 on a log axis and are reported and dropped.
 """
 function entropy_curves(runs, cfg, smooth_delta)
+    # If results lack N field (single-N sweeps), they all map to 0; one unique value (0) ⇒ show_N=false.
     show_N = length(unique(hasproperty(r, :N) ? r.N : 0 for r in runs)) > 1
     curves = Curve[]
     for (j, res) in enumerate(runs)
-        t, E = prepare_ts(res)
+        t, E = prepare_ts(res)  # time and modal energies; guard against t≤0 (can't log them)
         if isempty(t)
             println("    · Δ=$(res.Delta): no positive times, skipped")
             continue
         end
-        t, S = logdownsample(t, entropy_series(E; delta = smooth_delta))
+        t, S = logdownsample(t, entropy_series(E; delta = smooth_delta))  # log-bin the entropy for cleaner curves
         push!(curves, Curve(t, S, curve_label(cfg, res, show_N); cyclic(j)...))
         println("    ✓ Δ=$(res.Delta)$(show_N ? " N=$(res.N)" : "") ($(length(t)) points)")
     end
@@ -80,6 +83,7 @@ function main()
 
     for p in sort(unique(Float64(r.param) for r in results))
         println("$(cfg.nonlinear) = $p:")
+        # Sort by (N, Δ) so N sweeps stack in size order and curves plot in Δ order within each N.
         runs = sort(filter(r -> Float64(r.param) == p, results),
                     by = r -> (hasproperty(r, :N) ? r.N : 0, Float64(r.Delta)))
         fig  = logplot(ylabel = L"\bar{S}(t)")
