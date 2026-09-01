@@ -73,7 +73,7 @@ function plot_dispersion(Δκ_values::Vector{Float64},
     return p
 end
 
-# ejecución cuando se llama como script
+# run when called as a script
 if abspath(PROGRAM_FILE) == @__FILE__
     plot_dispersion(Δκ_values_dispersion, k_reduced, a, m)
 end

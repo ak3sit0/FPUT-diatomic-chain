@@ -101,16 +101,16 @@ function scattering_rate(Δκ; Nk=601, Ngrid=401, min_Δκ=1e-3)
 
     R_total = 0.0
 
-    # Iteramos sobre los niveles del contorno (en este caso solo pedimos el [0.0])
+    # Iterate over the contour levels (here we only ask for the [0.0] one)
     for c_level in levels(cs)
-        # Extraemos las líneas/arcos de este nivel usando el nuevo nombre
-        for cl in contour_lines(c_level)          
+        # Extract the lines/arcs of this level using the new name
+        for cl in contour_lines(c_level)
             xs, ys = coordinates(cl) # k1, k2 coordinates along the arc
             n = length(xs)
             n < 2 && continue
 
             # ── Step 3 & 4: trapezoid integration along the arc ─────────────────
-            # (El resto del bucle for i in 1:(n-1) se queda exactamente igual)
+            # (The rest of the for i in 1:(n-1) loop stays exactly the same)
             for i in 1:(n-1)
                 k1m = 0.5*(xs[i] + xs[i+1])
                 k2m = 0.5*(ys[i] + ys[i+1])
@@ -161,7 +161,7 @@ function plot_scattering_rate(delta_values, R_vals; outdir="results/figures/scat
     i_max = argmax(R_norm)
     Δκ_opt = delta_values[i_max]
 
-    # Convertir Δκ a η = (1 - Δκ)/(1 + Δκ)
+    # Convert Δκ to η = (1 - Δκ)/(1 + Δκ)
     eta_values = @. (1 - delta_values) / (1 + delta_values)
     eta_opt = (1 - Δκ_opt) / (1 + Δκ_opt)
 
@@ -176,23 +176,23 @@ function plot_scattering_rate(delta_values, R_vals; outdir="results/figures/scat
                xlabelsize=29, ylabelsize=29, titlesize=32,
                xticklabelsize=22, yticklabelsize=22)
 
-    # Agregar grid sutil
+    # Add subtle grid
     hlines!(ax, [0.0, 0.25, 0.5, 0.75, 1.0], color=:gray, alpha=0.2, linewidth=0.5)
     vlines!(ax, collect(0.0:0.1:1.0), color=:gray, alpha=0.2, linewidth=0.5)
 
     xlims!(ax, 0.0, eta_max)
 
-    # Curva principal (azul oscuro)
+    # Main curve (dark blue)
     lines!(ax, eta_values, R_norm, linewidth=3.5, color=:darkblue, label=L"R(\eta)")
 
-    # Punto máximo prominente (azul muy oscuro)
+    # Prominent maximum point (very dark blue)
     scatter!(ax, [eta_opt], [1.0], color=:darkblue, markersize=22, strokewidth=4,
              strokecolor=:white, label=latexstring("\\text{Maximum at } \\eta \\approx $(round(eta_opt, digits=3))"))
 
-    # Línea vertical en el máximo (azul oscuro, punteada)
+    # Vertical line at the maximum (dark blue, dashed)
     vlines!(ax, [eta_opt], linestyle=:dash, color=:darkblue, linewidth=2.0, alpha=0.7)
 
-    # Leyenda limpia
+    # Clean legend
     axislegend(ax, position=:lt, fontsize=16, framevisible=true,
                backgroundcolor=(:white, 0.8), labelsize=24)
 

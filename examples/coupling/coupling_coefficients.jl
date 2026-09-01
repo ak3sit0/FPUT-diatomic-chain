@@ -19,16 +19,16 @@ const BRANCH_IDX = Dict('a' => 1, 'o' => 2)
 """
     plot_gamma(kA, kB, alfa; resonance=false, Nk=601, Ngrid=201) -> Figure
 
-Rejilla de los 8 |Γ|. `resonance=true` añade el contorno de resonancia por panel
-y una barra de color por panel (variante PNG); `false` usa una única barra
-compartida (variante PDF).
+Grid of the 8 |Γ|. `resonance=true` adds the resonance contour per panel
+and a colorbar per panel (PNG variant); `false` uses a single shared
+colorbar (PDF variant).
 """
 function plot_gamma(kA, kB, alfa; resonance::Bool=false, Nk=601, Ngrid=201)
     kplot, names, Gamma = compute_gamma(kA, kB, alfa; Nk=Nk, Ngrid=Ngrid)
     maxabs = maximum(maximum(abs.(G)) for G in Gamma)
 
-    # La variante con resonancia deja sitio a 8 barras de color, así que usa
-    # tipografía algo menor que la de barra compartida.
+    # The resonance variant makes room for 8 colorbars, so it uses
+    # somewhat smaller typography than the shared-colorbar variant.
     fs_label, fs_title, fs_super = resonance ? (22, 20, 22) : (26, 32, 34)
 
     fig = Figure(size=(1400, 1050))

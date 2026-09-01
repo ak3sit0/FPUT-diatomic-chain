@@ -78,8 +78,14 @@ Implementado en `src/plotting_utils.jl` — fuente única de paletas, estilos y 
 | `PALETTE`/`LINESTYLES` locales de `plot_ftmle.jl` | `FTMLE_PALETTE`/`FTMLE_LINESTYLES` |
 | `:Blues`/`:orangered` hardcoded en 3 scripts de coupling | `PALETTE_COUPLING`/`RESONANCE_LINE` |
 | `~8 literales "#0D4CB3"` en `plot_ensemble_results.jl` | `BLUE_DARK`/`BLUE_MID`/`GRAY_GUIDE` |
-| paleta rainbow local en `plot_entropy_Nsweep.jl` | `PALETTE_CATEGORICAL` (mismos colores) |
 | `palette[i]` / `colors[mod1(...)]` mezclados | `cyc(palette, i)` en todos los scripts |
+
+**Actualización (2026-08-22):** `plot_entropy_Nsweep.jl` fue **eliminado** — resultó ser
+redundante con `plot_entropy_param_sweep.jl` corrido directo sobre el mismo archivo (verificado:
+`entropy_series(modal_E, 0.6)` coincide con el `entropy` precalculado a 3e-15). Con él se fue
+`PALETTE_CATEGORICAL`, que no tenía otro consumidor. La comparación real entre tamaños N vive ahora
+en `scripts/plot/plot_entropy_size_sweep.jl` (script nuevo, no existía cuando se escribió la tabla
+de arriba).
 
 **Deduplicación de lógica:**
 

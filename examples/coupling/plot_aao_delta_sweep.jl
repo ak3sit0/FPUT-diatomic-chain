@@ -7,7 +7,7 @@ function plot_aao_delta_sweep(delta_values, alfa; Nk=601, Ngrid=201)
     kplot = collect(range(-π, π, length=Ngrid)) # Range of values of k to plot
     aao_idx = 2  # "--+" is the second index
 
-    # Pre-calcular todos los |Γ_aao|
+    # Precompute all |Γ_aao|
     aao_data = map(delta_values) do delta
         kA = 1.0 + delta
         kB = 1.0 - delta
@@ -35,16 +35,16 @@ function plot_aao_delta_sweep(delta_values, alfa; Nk=601, Ngrid=201)
                            colorrange=(0, global_max), colormap=PALETTE_COUPLING,
                            rasterize=4)
 
-        # Curva de resonancia aao: s1=1(a), s2=1(a), s3=2(o)
+        # aao resonance curve: s1=1(a), s2=1(a), s3=2(o)
         D = resonance_matrix(kplot, kA, kB, 1, 1, 2)
         contour!(ax, kplot, kplot, D; levels=[0.0], color=RESONANCE_LINE, linewidth=2.5)
     end
 
-    # Barra de color compartida
+    # Shared colorbar
     Colorbar(fig[1:2, 4], last_hm;
              label=L"|\Gamma_{--+}(k_1,k_2)|", width=35, labelsize=40)
 
-    # Supertítulo
+    # Supertitle
     Label(fig[0, :],
           latexstring("\\left|\\Gamma_{--+}(k_1,k_2)\\right|,\\quad k_3=-k_1-k_2,\\quad \\alpha=$(alfa)"),
           fontsize=34)

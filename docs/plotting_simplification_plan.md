@@ -1,6 +1,20 @@
 # Plan: adelgazar los scripts de plotting sin tocar la estética
 
-Estado: **propuesto, no implementado**. Continuación de `plotting_backend_diagnostics.md`.
+Estado: **superseded (2026-08-22)** — el objetivo (adelgazar `scripts/plot/`) se cumplió, pero con
+un diseño más simple que el descrito abajo. Diferencias reales con lo implementado:
+
+- **No hay `theme_makie.jl`/`theme_plots.jl` separados.** Una sola capa, `src/plot_style.jl`
+  (Plots.jl: `apply_style!`, `logplot`, `draw!`, `save_fig`), más la costura `Curve`/`cyclic` en
+  `src/plotting_utils.jl`. `plot_heatmap_grid.jl` (CairoMakie) sigue sin tocar, tal como este plan
+  ya preveía.
+- **`plot_ensemble_results.jl` no se refactorizó.** Sigue como monolito en `deprecated/` (fuera de
+  git). La decisión 3 de este plan (quitar el panel duplicado de la figura 4) sigue sin aplicarse.
+- Lo que sí se hizo igual que lo planeado: funciones nombradas (no listas declarativas), y
+  `plot_entropy_paper.jl`/`plot_entropy_param_sweep.jl`/`plot_ftmle.jl` comparten ahora la base.
+  Se sumó además `plot_entropy_size_sweep.jl` (no estaba en el alcance original).
+
+Se deja el resto del documento como registro del razonamiento original; no describe el estado
+actual del código.
 
 ## Motivación
 

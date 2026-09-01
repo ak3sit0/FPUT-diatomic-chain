@@ -4,6 +4,9 @@ using LinearAlgebra
 include("../src/fput_core.jl"); using .FPUTCore
 include("../src/fput_fast_runner.jl"); using .FPUTFastRunner
 include("../src/fput_analysis.jl"); using .FPUTAnalysis
+include("../src/experiment.jl"); using .Experiment
+include("../src/case_setup.jl"); using .CaseSetup
+include("../src/sweep_driver.jl"); using .SweepDriver
 
 # ── Helper: Analytic dispersion for diatom with equal springs ──
 """
@@ -240,3 +243,5 @@ end
     end
 
 end
+
+include("test_compute_pipeline.jl")

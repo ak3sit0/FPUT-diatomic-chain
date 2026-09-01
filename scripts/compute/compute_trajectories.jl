@@ -1,105 +1,68 @@
 """
     compute_trajectories.jl
 
-Simple, robust reimplementation of `compute_modal_energies.jl` using the
-refactored `src/` modules. Performs parameter sweeps (param_values × delta_values),
-saves a single `.jld2` with multiple run entries and minimal reproducibility metadata.
+Deterministic trajectory sweep over `N × param × Δ`: one run per combination,
+all the energy in a single mode.
+
+Replaces `compute_trajectories.jl` + `compute_trajectories_Nsweep.jl`. The
+N sweep was never a different computation — it is this script with more than one
+entry in `N_values`.
 
 Usage:
-  julia --project=. scripts/compute_trajectories.jl configs/templates/test_quick.toml
+  julia --project=. scripts/compute/compute_trajectories.jl <config.toml>
 """
 
-using TOML, JLD2, Dates, Base.Threads, Statistics, LinearAlgebra
-include("../../src/fput_core.jl");   using .FPUTCore
+using JLD2, Statistics, LinearAlgebra
+include("../../src/fput_core.jl");        using .FPUTCore
 include("../../src/fput_fast_runner.jl"); using .FPUTFastRunner
 include("../../src/fput_analysis.jl");    using .FPUTAnalysis
-include("../../src/block_integration.jl"); using .BlockIntegration
+include("../../src/block_integration.jl");using .BlockIntegration
+include("../../src/experiment.jl");       using .Experiment
+include("../../src/case_setup.jl");       using .CaseSetup
+include("../../src/sweep_driver.jl");     using .SweepDriver
 
-function build_config(path::String)
-    d = TOML.parsefile(path)
-    phys = d["physics"]
-    sim  = d["simulation"]
-    out  = d["output"]
+const USAGE = "Usage: julia --project=. scripts/compute/compute_trajectories.jl <config.toml>"
 
-    return (
-        N = Int(phys["N"]),
-        boundary = Symbol(phys["boundary"]),
-        system_type = phys["system_type"],
-        nonlinear = Symbol(phys["nonlinear"]),
-        param_values = Float64.(phys["param_values"]),
-        delta_values = Float64.(phys["delta_values"]),
-        initial_energy = Float64(get(phys, "initial_energy", 0.45)),
-        init_type = get(phys, "initial_condition", "low"),
-        TMAX = Float64(sim["TMAX"]),
-        T_block = Float64(sim["T_block"]),
-        DT = Float64(sim["DT"]),
-        save_every = Int(sim["save_every"]),
-        downsample = Int(sim["downsample"]),
-        debug = Bool(sim["debug"]),
-        base_dir = out["base_dir"],
-    )
+"""Integrate one case and return its result entry."""
+function run_case(spec, task)
+    label = "N=$(task.N) p=$(task.param) Δ=$(task.delta)"
+    println("[$label] ε=$(round(spec_epsilon(spec, task.N); sigdigits=4))")
+
+    case   = build_case(spec, task.N, task.param, task.delta)
+    q0, v0 = initial_condition(case, spec, spec.seed_base)
+    b      = case.budget
+
+    result = integrate_in_blocks(case.sp, q0, v0, case.N, case.freq, case.V, case.m,
+                                 case.ref_mode;
+                                 TMAX = b.TMAX, T_block = b.T_block, DT = spec.DT,
+                                 save_every = b.save_every, downsample = spec.downsample,
+                                 track_abs_time = true, debug = spec.debug, label = label)
+
+    entropy = FPUTAnalysis.spectral_entropy(result.modal_E, spec.entropy_delta)
+    println("[$label] done; nt=$(length(result.scaled_t))  S_final=$(round(entropy[end]; digits=4))")
+
+    (; N = case.N, param = case.param, Delta = case.delta,
+       scaled_t = result.scaled_t, t_abs = result.t_abs,
+       modal_E = result.modal_E, entropy = entropy,
+       E_total = b.E_total, energy_density = b.E_total / case.N,
+       omega_ref = case.omega_ref, TMAX = b.TMAX, save_every = b.save_every,
+       init_type = spec.init_type, excited = case.excited)
 end
 
-function run_case(idx, pval, delta, cfg)
-    println("[case $idx] Starting p=$pval Δ=$delta")
-    # Build SystemParams
-    sp = FPUTCore.SystemParams(cfg.N, (cfg.system_type=="springs") ? delta : 0.0, (cfg.system_type=="masses") ? delta : 0.0,
-                              cfg.nonlinear==:alpha ? pval : 0.0,
-                              cfg.nonlinear==:beta ? pval : 0.0,
-                              cfg.boundary)
-
-    # Initial condition: mode or random (simple: mode)
-    k, m = FPUTCore.make_system(sp)
-    q_cur = zeros(cfg.N); v_cur = zeros(cfg.N)
-    freq, V = FPUTCore.find_normal_modes(k, m, sp.boundary)
-
-    # Sorting modes by frequency to ensure consistent mode selection across cases
-    idx_sort = sortperm(freq)
-    freq = freq[idx_sort]
-    V    = V[:, idx_sort]
-
-    # default to lowest acoustic mode
-    target_mode = sp.boundary == :fixed ? 1 : 2
-    amplitude = sqrt(2 * cfg.initial_energy) / freq[target_mode]
-    U = Diagonal(1 ./ sqrt.(m)) * V
-    q_cur .= amplitude .* U[:, target_mode]
-
-    result = integrate_in_blocks(sp, q_cur, v_cur, cfg.N, freq, V, m, target_mode;
-                                  TMAX=cfg.TMAX, T_block=cfg.T_block, DT=cfg.DT,
-                                  save_every=cfg.save_every, downsample=cfg.downsample,
-                                  debug=true, label="case $idx")
-
-    println("[case $idx] Done; times=$(length(result.scaled_t)) steps")
-
-    return (param=pval, Delta=delta, scaled_t=result.scaled_t, modal_E=result.modal_E)
-end
+spec_epsilon(spec, N) = isnothing(spec.energy_density) ? spec.E_total / N : spec.energy_density
 
 function main()
-    if isempty(ARGS)
-        println("Usage: julia scripts/compute_trajectories.jl <config.toml>")
-        return
-    end
-    cfg = build_config(ARGS[1])
-    mkpath(cfg.base_dir)
+    isempty(ARGS) && error(USAGE)
+    spec  = parse_spec(ARGS[1])
+    tasks = sweep_tasks(spec)
 
-    pairs = collect(Iterators.product(cfg.param_values, cfg.delta_values))
-    results = Vector{Any}(undef, length(pairs))
+    println("Sweep: $(length(tasks)) cases = $(length(spec.N_values)) N × " *
+            "$(length(spec.param_values)) param × $(length(spec.delta_values)) Δ\n")
 
-    Threads.@threads for i in eachindex(pairs)
-        pval, delta = pairs[i]
-        results[i] = try
-            run_case(i, pval, delta, cfg)
-        catch e
-            println("[case $i] ERROR: $e")
-            nothing
-        end
-    end
-
-    valid = filter(!isnothing, results)
-    outpath = joinpath(cfg.base_dir, "sweep_results_$(Dates.today()).jld2")
-    @info "Saving results to $outpath"
-    jldsave(outpath; results=valid, config=ARGS[1])
-    println("Saved: $outpath with $(length(valid)) entries")
+    run_sweep(t -> run_case(spec, t), tasks;
+              outfile     = output_path(spec, "sweep_results"),
+              config_path = ARGS[1],
+              parallel    = :threads)
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__

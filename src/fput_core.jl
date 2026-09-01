@@ -3,7 +3,7 @@ module FPUTCore
 using LinearAlgebra, Random
 
 export SystemParams, make_system, fput_forces!, find_normal_modes, bond_potential,
-       derive_band_indices, band_phase_ic
+       derive_band_indices, band_phase_ic, ref_frequency, OMEGA_MIN
 
 # ── Layer 1: Domain types (SICP: Data Abstraction) ──
 struct SystemParams
@@ -146,56 +146,66 @@ end
 """
     derive_band_indices(branch, N, freq, boundary; k_band_start, k_band_end)
 
-Devuelve Vector{Int} (1-based) de los índices de modo para la rama solicitada.
-`freq` debe estar ordenado en forma ascendente antes de llamar esta función.
-Si k_band_start/k_band_end están presentes, los usa directamente (override manual).
+Returns Vector{Int} (1-based) of mode indices for the requested branch.
+`freq` must be sorted ascending before calling this function.
+If k_band_start/k_band_end are given, uses them directly (manual override).
 """
 function derive_band_indices(branch::String, N::Int, freq::Vector{Float64},
                               boundary::Symbol;
                               k_band_start::Union{Int,Nothing}=nothing,
                               k_band_end::Union{Int,Nothing}=nothing)
     if !isnothing(k_band_start) && !isnothing(k_band_end)
+        # The automatic branch below deliberately avoids mode 1 under PBC (k=0
+        # translation, ω≈3e-8 from roundoff). When indices are given by hand that
+        # protection did not apply: it is replicated here, plus the range bounds.
+        1 <= k_band_start || error("k_band_start=$k_band_start must be ≥ 1 (1-based indices)")
+        k_band_end <= N || error("k_band_end=$k_band_end exceeds N=$N")
+        k_band_start <= k_band_end ||
+            error("Empty band: k_band_start=$k_band_start > k_band_end=$k_band_end")
+        boundary == :periodic && k_band_start == 1 && error(
+            "k_band_start=1 with PBC includes the uniform translation k=0 (ω≈0, not a " *
+            "physical mode): it would collapse scaled_t and make TMAX diverge. Use k_band_start ≥ 2.")
         return collect(k_band_start:k_band_end)
     end
 
     if boundary == :periodic
-        isodd(N) && error("La cadena diatómica con PBC exige N par (resortes alternados); N=$N")
+        isodd(N) && error("The diatomic chain with PBC requires even N (alternating springs); N=$N")
 
-        # El gap acústico/óptico está ESTRUCTURALMENTE en N/2: N/2 modos por rama.
-        # NO se detecta con argmax(diff(freq)): a N pequeño y Δκ pequeño el espaciado
-        # intrabanda (~1/N) supera al gap (~Δκ) y argmax cae dentro de la rama acústica.
-        # Medido: N=32 Δκ=0.10 daba gap_idx=3 (banda 2:3 en vez de 2:16); N=64 Δκ=0.05
-        # también fallaba. A partir de N≥128 argmax acierta, pero no hace falta confiar
-        # en él habiendo una respuesta exacta.
+        # The acoustic/optical gap sits STRUCTURALLY at N/2: N/2 modes per branch.
+        # It is NOT detected via argmax(diff(freq)): for small N and small Δκ the
+        # intraband spacing (~1/N) exceeds the gap (~Δκ) and argmax lands inside the
+        # acoustic branch. Measured: N=32 Δκ=0.10 gave gap_idx=3 (band 2:3 instead of
+        # 2:16); N=64 Δκ=0.05 also failed. From N≥128 argmax gets it right, but there
+        # is no need to rely on it when there is an exact answer.
         gap_idx = N ÷ 2
 
-        # El argmax se conserva sólo como diagnóstico.
+        # argmax is kept only as a diagnostic.
         argmax_idx = argmax(diff(freq)[2:end]) + 1
         if argmax_idx != gap_idx
-            @warn "Gap por argmax ($argmax_idx) ≠ estructural ($gap_idx): el espaciado " *
-                  "intrabanda supera al gap. Se usa el estructural (N/2)." N branch
+            @warn "Gap by argmax ($argmax_idx) ≠ structural ($gap_idx): the intraband " *
+                  "spacing exceeds the gap. Using the structural one (N/2)." N branch
         end
 
-        branch == "acoustic" && return collect(2:gap_idx)   # excluye traslación (ω≈0)
+        branch == "acoustic" && return collect(2:gap_idx)   # excludes translation (ω≈0)
         branch == "optical"  && return collect(gap_idx+1:N)
-        error("branch debe ser 'acoustic' o 'optical', recibido: '$branch'")
+        error("branch must be 'acoustic' or 'optical', got: '$branch'")
     else  # :fixed
         branch == "acoustic" && return collect(1:N)
-        error("Frontera fija no tiene rama óptica distinguible")
+        error("Fixed boundary has no distinguishable optical branch")
     end
 end
 
 """
     band_phase_ic(k_band, E_total, N, freq, V, m, seed) -> (q0, v0)
 
-Condición inicial de banda selectiva con fases aleatorias uniformes.
+Band-selective initial condition with uniform random phases.
 
-Energía E_total distribuida uniformemente sobre los modos en k_band:
-  E_j = E_total / length(k_band)  para j ∈ k_band
+E_total distributed uniformly over the modes in k_band:
+  E_j = E_total / length(k_band)  for j ∈ k_band
   Q_j =  sqrt(2·E_j) / ω_j · cos(φ_j),  P_j = -sqrt(2·E_j) · sin(φ_j)
   q = (1/√m) · V · Q,   v = (1/√m) · V · P
 
-Validación post-construcción con @assert (precisión de máquina).
+Post-construction validation with @assert (machine precision).
 """
 function band_phase_ic(k_band::AbstractVector{Int}, E_total::Float64, N::Int,
                        freq::Vector{Float64}, V::Matrix{Float64},
@@ -206,7 +216,7 @@ function band_phase_ic(k_band::AbstractVector{Int}, E_total::Float64, N::Int,
     P      = zeros(N)
 
     for j in k_band
-        freq[j] < 1e-10 && continue   # modo de Goldstone (traslación, ω≈0)
+        freq[j] < 1e-10 && continue   # Goldstone mode (translation, ω≈0)
         φ    = rand(rng) * 2π
         A    = sqrt(2 * E_per)
         Q[j] =  A / freq[j] * cos(φ)
@@ -217,7 +227,7 @@ function band_phase_ic(k_band::AbstractVector{Int}, E_total::Float64, N::Int,
     q0 = (V * Q) .* inv_sqrt_m
     v0 = (V * P) .* inv_sqrt_m
 
-    # Proyectar de vuelta para verificar
+    # Project back to verify
     x        = sqrt.(m) .* q0
     vx       = sqrt.(m) .* v0
     Q_check  = V' * x
@@ -227,10 +237,38 @@ function band_phase_ic(k_band::AbstractVector{Int}, E_total::Float64, N::Int,
     E_in     = sum(E_check[k_band])
     tol      = 1e-8 * E_total
 
-    @assert E_out < tol        "Fuga de energía fuera de banda: E_out=$(E_out) (tol=$(tol))"
-    @assert abs(E_in - E_total) < tol "Normalización incorrecta: E_in=$(E_in) vs E_total=$(E_total)"
+    @assert E_out < tol        "Energy leak outside the band: E_out=$(E_out) (tol=$(tol))"
+    @assert abs(E_in - E_total) < tol "Incorrect normalization: E_in=$(E_in) vs E_total=$(E_total)"
 
     return q0, v0
+end
+
+# ── Layer 6: Reference frequency (time scale) ──
+
+"""Below this, a frequency is numerical noise rather than a physical mode."""
+const OMEGA_MIN = 1e-6
+
+"""
+    ref_frequency(freq, ref_mode) -> Float64
+
+Frequency that sets the time scale (`scaled_t = t·ω/2π`) and, when a config gives
+`scaled_t_max`, the integration budget (`TMAX = scaled_t_max·2π/ω`).
+
+Errors when `ω ≈ 0`. Under PBC the mode 1 is the uniform k=0 translation, whose
+eigenvalue is roundoff (`λ ~ 1e-16`, so `ω ~ 3e-8` — finite, not `Inf`), which makes
+the failure silent: `scaled_t` collapses to ~0 and `TMAX` blows up by ~10⁶.
+`ω₂ = 6.25/N`, so the threshold only bites for N ≳ 10⁶ — there is no physical mode
+between it and the noise floor.
+"""
+function ref_frequency(freq::AbstractVector, ref_mode::Integer)
+    1 <= ref_mode <= length(freq) ||
+        error("ref_mode=$ref_mode out of range (1..$(length(freq)))")
+    ω = freq[ref_mode]
+    ω >= OMEGA_MIN || error(
+        "ref_mode=$ref_mode has ω=$ω ≈ 0: it is the uniform k=0 translation of PBC, not a " *
+        "physical mode. scaled_t would collapse and TMAX would diverge ~1e6×. With " *
+        "boundary=:periodic use a mode ≥ 2.")
+    ω
 end
 
 end # module FPUTCore

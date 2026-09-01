@@ -32,17 +32,28 @@ function select(results, pcfg)
                 keep(r.Delta, pcfg.filter_deltas), results)
 end
 
-delta_label(cfg, d) = latexstring(cfg.system_type == :springs ? "\\Delta \\kappa = $d" :
-                                                                "\\Delta m = $d")
+"""
+    curve_label(cfg, res, show_N) -> LaTeXString
+
+Δκ (or Δm) alone, plus N when the file spans several sizes. `compute_trajectories.jl`
+can emit a multi-N sweep in one file, and without N the legend would repeat the
+same Δ label once per size.
+"""
+function curve_label(cfg, res, show_N::Bool)
+    sym = cfg.system_type == :springs ? "\\Delta \\kappa" : "\\Delta m"
+    show_N && hasproperty(res, :N) ?
+        latexstring("N = $(res.N),\\ $sym = $(res.Delta)") :
+        latexstring("$sym = $(res.Delta)")
+end
 
 """
     entropy_curves(runs, cfg, smooth_delta) -> Vector{Curve}
 
-S̄(t) for each run, styled cyclically in Δ order. Runs with no positive
-timestamp cannot go on a log axis and are reported and dropped.
+S̄(t) for each run, styled cyclically. Runs with no positive timestamp cannot go
+on a log axis and are reported and dropped.
 """
-
 function entropy_curves(runs, cfg, smooth_delta)
+    show_N = length(unique(hasproperty(r, :N) ? r.N : 0 for r in runs)) > 1
     curves = Curve[]
     for (j, res) in enumerate(runs)
         t, E = prepare_ts(res)
@@ -51,8 +62,8 @@ function entropy_curves(runs, cfg, smooth_delta)
             continue
         end
         t, S = logdownsample(t, entropy_series(E; delta = smooth_delta))
-        push!(curves, Curve(t, S, delta_label(cfg, res.Delta); cyclic(j)...))
-        println("    ✓ Δ=$(res.Delta) ($(length(t)) points)")
+        push!(curves, Curve(t, S, curve_label(cfg, res, show_N); cyclic(j)...))
+        println("    ✓ Δ=$(res.Delta)$(show_N ? " N=$(res.N)" : "") ($(length(t)) points)")
     end
     curves
 end
@@ -69,7 +80,8 @@ function main()
 
     for p in sort(unique(Float64(r.param) for r in results))
         println("$(cfg.nonlinear) = $p:")
-        runs = sort(filter(r -> Float64(r.param) == p, results), by = r -> Float64(r.Delta))
+        runs = sort(filter(r -> Float64(r.param) == p, results),
+                    by = r -> (hasproperty(r, :N) ? r.N : 0, Float64(r.Delta)))
         fig  = logplot(ylabel = L"\bar{S}(t)")
         draw!(fig, entropy_curves(runs, cfg, pcfg.smooth_delta))
         save_fig(fig, pcfg.outdir_entropy,

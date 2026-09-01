@@ -3,25 +3,25 @@ include("../../src/dispersion.jl");      using .Dispersion
 include("../../src/fput_analysis.jl");   using .FPUTAnalysis
 include("../../src/plotting_utils.jl");  using .PlottingUtils
 
-# Dispersión en forma compacta (κ* = 1 - Δκ²) — ec. (9) del paper, en Dispersion
+# Dispersion in compact form (κ* = 1 - Δκ²) — eq. (9) of the paper, in Dispersion
 const omega_plus  = Dispersion.omega_compact_plus
 const omega_minus = Dispersion.omega_compact_minus
 
-# Residuo de la condición de resonancia ω₋(k₁) + ω₋(k₂) = ω₊(k₃)
+# Residual of the resonance condition ω₋(k₁) + ω₋(k₂) = ω₊(k₃)
 function resonance_residual(k1, k2, delta)
-    k3 = mod(-k1 - k2 + π, 2π) - π  # wrap correcto
+    k3 = mod(-k1 - k2 + π, 2π) - π  # correct wrap
     omega_plus(k3, delta) - omega_minus(k1, delta) - omega_minus(k2, delta)
 end
- 
+
 function compute_residual(k1_vals, k2_vals, delta)
-    # Si delta es exactamente 0, forzamos un residuo que NUNCA sea 0
-    # para que las curvas de nivel [0.0] salgan completamente vacías.
+    # If delta is exactly 0, force a residual that is NEVER 0 so the [0.0]
+    # level curves come out completely empty.
     if delta == 0.0
-        # Devolvemos una matriz llena de un valor constante (ej. 1.0)
-        # Así contour! no encontrará ningún cero y la gráfica quedará limpia.
+        # Return a matrix filled with a constant value (e.g. 1.0), so
+        # contour! finds no zero and the plot stays clean.
         return fill(1.0, length(k1_vals), length(k2_vals))
     else
-        # Para cualquier otro caso (delta > 0), el código sigue igual que antes
+        # For any other case (delta > 0), the code proceeds as before.
         return resonance_residual.(k1_vals, k2_vals', delta)
     end
 end
@@ -35,7 +35,7 @@ function add_klapp_umklapp_regions!(p; xmin=-π, xmax=π)
     plot!(p, tri_botleft;  fillcolor=RGB(0.961, 0.773, 0.094), fillalpha=0.18,
           linealpha=0, label="")
 
-    # Frontera k1+k2 = ±π
+    # Boundary k1+k2 = ±π
     plot!(p, [0.0, π], [π, 0.0]; color=RGB(0.753, 0.439, 0.0), linestyle=:dash,
           linewidth=2.5, alpha=0.90, label="")
     plot!(p, [0.0, -π], [-π, 0.0]; color=RGB(0.753, 0.439, 0.0), linestyle=:dash,
@@ -91,7 +91,7 @@ function plot_multiple_resonance(N, delta_values;
              legendfont = font(legendfs),
              framestyle = :origin)
 
-    add_klapp_umklapp_regions!(p)   # ← NUEVA línea, antes del loop
+    add_klapp_umklapp_regions!(p)   # ← NEW line, before the loop
 
     for (i, delta) in enumerate(delta_values)
         col = cyc(PALETTE_DELTA, i)
@@ -105,7 +105,7 @@ function plot_multiple_resonance(N, delta_values;
                         tickfs   = tickfs,
                         legendfs = legendfs)
 
-        # entrada de leyenda limpia
+        # clean legend entry
         plot!(p, [NaN], [NaN],
               color     = col,
               linewidth = 1.4,

@@ -10,7 +10,7 @@ nonlinear = "alpha"
 param_values = [0.1]
 delta_values = [0.05, 0.1, 0.2, 0.3, 0.5, 0.7]
 initial_condition = "mode"
-init_mode = 2
+init_mode = 1 # fixed BC: mode 1 is the lowest acoustic mode (no k=0 zero mode as in periodic)
 initial_energy = 0.445 # Initial density energy = 0.445/N
 
 [simulation]
