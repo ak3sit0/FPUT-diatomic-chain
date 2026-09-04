@@ -1,0 +1,27 @@
+[experiment]
+name        = "pilot_alpha_eps_equivalence"
+description = "Pilot: sweep alpha at fixed epsilon to test alpha^2*eps invariance and locate the creep-to-sigmoid transition in T_th"
+
+[physics]
+N             = 64
+boundary      = "periodic"
+system_type   = "springs"
+nonlinear     = "alpha"
+param_values  = [0.1, 0.2, 0.4, 0.8]
+delta_values  = [0.01, 0.1, 0.3, 0.5]
+init_type     = "band_ensemble"
+branch        = "acoustic"
+n_real        = 5
+seed_base     = 42
+energy_density = 0.00695
+
+[simulation]
+scaled_t_max = 1.0e4
+n_samples    = 2000
+DT           = 0.2
+n_blocks     = 20
+entropy_delta = 0.6
+debug        = false
+
+[output]
+base_dir = "results/data/tests"
