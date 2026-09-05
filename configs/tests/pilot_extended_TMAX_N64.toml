@@ -1,0 +1,26 @@
+[experiment]
+name        = "pilot_extended_TMAX_N64"
+description = "Extend the reference PBC N=64 run (sweep_results_2026-07-02) 6.4x in scaled time to test whether xi crosses the four-wave equipartition estimate (~3.2e5 cycles)"
+
+[physics]
+N = 64
+boundary = "periodic"
+system_type = "springs"
+nonlinear = "alpha"
+param_values = [0.1]
+delta_values = [0.05, 0.1, 0.2, 0.3, 0.5, 0.7]
+initial_condition = "mode"
+init_mode = 2
+initial_energy = 0.445
+
+[simulation]
+scaled_t_max = 1.0e5
+n_blocks     = 40
+DT           = 0.05
+n_samples    = 3000
+downsample   = 1
+entropy_delta = 0.6667
+debug        = false
+
+[output]
+base_dir = "results/data/tests"
