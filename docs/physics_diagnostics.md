@@ -62,6 +62,12 @@ ahora a `src/dispersion.jl`. Quedan dos implementaciones (`Dispersion` y `FPUTCo
 ## Dos definiciones distintas de "tiempo de termalización"
 
 **Severidad: media** — afecta a la interpretación de las figuras, no a las simulaciones.
+**Estado: pendiente, en curso de resolución.** La decisión de cuál es la definición
+canónica ya se tomó en [[thermalization_time_nsweep_plan]] (convención de Huang,
+ξ=1/2, S_eq=log(N/2)) pero **no está implementada todavía**: falta el cambio en
+`compute_ensemble.jl:91` y la actualización de `plot_ensemble_results.jl`/
+`plot_thermalization_time.jl` para dejar de recomputar T_th vía E_optical. No
+duplicar este pendiente aquí más allá de este apunte — el detalle vive en el otro doc.
 
 Conviven dos estimadores distintos de T_th bajo el mismo nombre:
 

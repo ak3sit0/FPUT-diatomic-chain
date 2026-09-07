@@ -1,5 +1,11 @@
 # Config: nsweep_rise_N256
 
+**Estado: ejecutado, resultado sin anotar.** Existen `configs/production/nsweep_rise_N256.toml`,
+datos en `results/data/nsweep_rise_N256/` y figuras en
+`results/figures/nsweep/entropy_Nsweep_N256.{png,pdf}`, pero este doc solo registra
+la pregunta/diseño previo al run — falta anotar si Δκ=0.05/0.30 se mantuvieron planos
+y si la subida en Δκ≈0.1–0.2 persiste a N=256 (criterios de éxito de la última sección).
+
 ## Pregunta física
 
 ¿Persiste para N>64 la subida parcial de entropía observada en N=64 a scaled_t ~1e3-1e5?
