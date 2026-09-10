@@ -15,7 +15,7 @@ using Plots, LaTeXStrings
 using ..PlottingUtils: Curve
 import Plots: mm
 
-export apply_style!, logplot, draw!, save_fig
+export apply_style!, logplot, draw!, guide_hline!, save_fig
 
 """
     apply_style!(; title=16, guide=14, tick=12, legend=12)
@@ -66,6 +66,19 @@ function draw!(p, curves)
         plot!(p, c.x, c.y; label = c.label, color = c.color,
               linestyle = c.linestyle, lw = c.linewidth, alpha = 0.85)
     end
+    p
+end
+
+"""
+    guide_hline!(p, y; label="", color=:gray)
+
+Horizontal reference line (equipartition ceiling, plateau level). Kept here
+rather than in the scripts so `draw!` stays the only place curves are drawn and
+no script grows its own `hline!` styling.
+"""
+function guide_hline!(p, y::Real; label::AbstractString = "", color = :gray)
+    hline!(p, [y]; color = color, linestyle = :dot, lw = 1.2,
+           label = isempty(label) ? "" : label)
     p
 end
 

@@ -96,7 +96,7 @@ function default_plot_config(input_file::String)::PlotConfig
     PlotConfig(
         input_file,
         0.6,
-        "results/figures/entropy",
+        "results/figures/entropy/param_sweep",
         "results/figures/xi",
         "results/figures/heatmaps",
         1.0,
@@ -139,7 +139,7 @@ function load_plot_config(path::String)::PlotConfig
     PlotConfig(
         data["input_file"],
         Float64(get(analysis, "smooth_delta", 0.6)),
-        get(out, "entropy_dir", "results/figures/entropy"),
+        get(out, "entropy_dir", "results/figures/entropy/param_sweep"),
         get(out, "xi_dir", "results/figures/xi"),
         get(out, "heatmaps_dir", get(out, "outdir_heatmaps", "results/figures/heatmaps")),
         Float64(get(plot, "t_min", 0.0)),

@@ -21,7 +21,7 @@ include("../../src/plotting_utils.jl"); using .PlottingUtils
 include("../../src/plot_style.jl");     using .PlotStyle
 
 const USAGE = "Usage: julia --project=. scripts/plot/plot_entropy_paper.jl <fbc.jld2> <pbc.jld2> [pbc_extra.jld2 ...]"
-const OUTDIR = "results/figures/entropy"
+const OUTDIR = "results/figures/entropy/paper"
 
 """
     paper_curves(paths, spec) -> Vector{Curve}
