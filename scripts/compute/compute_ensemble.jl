@@ -76,25 +76,28 @@ end
 # ── Thermalization time ───────────────────────────────────────────────────────
 
 """
-    thermalization_stats(entropies, scaled_t, k_band, N) -> NamedTuple
+    thermalization_stats(entropies, scaled_t, k_band, N; xi_th = 0.5) -> NamedTuple
 
-Per-realization threshold on the normalized entropy, then ensemble statistics.
-`f = 1 - 1/e` is the natural relaxation fraction for exponential growth;
-`S₀ = log|k_band|` is the initial band entropy and `S_eq = log N` equipartition.
+Per-realization crossing time of the effective mode occupancy ξ(t) = e^{S(t)}/N,
+then ensemble statistics. `T_th` is the first time ξ exceeds `xi_th`.
+
+Huang et al. (2016) / Wang et al. (2020, 2024) convention: equipartition is
+ξ_eq = 1/2, so the threshold is the *absolute* entropy `S > log(N·xi_th) = log(N/2)`,
+not a fractional rise from the initial band entropy. This replaces the earlier
+`f = 1 - 1/e` rise on `(S - S₀)/(log N - S₀)`, which mixed the band size into the
+threshold — ξ₀ depends on |k_band| but ξ_eq does not, so the absolute form is what
+makes runs with different band sizes comparable.
 
 Note this is *not* the same quantity as `PlottingUtils.thermalization_time`,
 which thresholds the optical energy instead — see `docs/physics_diagnostics.md`.
 """
-function thermalization_stats(entropies, scaled_t, k_band, N)
-    f   = 1 - 1/ℯ
-    S0  = log(length(k_band))  # entropy of a delta-like distribution confined to k_band
-    ΔS  = log(N) - S0          # full rise from band-confined to fully equipartitioned
+function thermalization_stats(entropies, scaled_t, k_band, N; xi_th::Real = 0.5)
+    S_th = log(N * xi_th)  # ξ > xi_th ⟺ S > log(N·xi_th); for xi_th=1/2 this is log(N/2)
 
     T_vec = map(entropies) do S_r
-        nt     = min(length(S_r), length(scaled_t))  # guard against off-by-one length mismatches
-        S_norm = (S_r[1:nt] .- S0) ./ ΔS              # rescaled to [0, 1] regardless of N or k_band
-        idx    = findfirst(>(f), S_norm)              # first sample crossing the 1-1/e threshold
-        isnothing(idx) ? Inf : scaled_t[idx]          # never thermalized within the run ⇒ Inf
+        nt  = min(length(S_r), length(scaled_t))  # guard against off-by-one length mismatches
+        idx = findfirst(>(S_th), @view S_r[1:nt])  # first sample with ξ above threshold
+        isnothing(idx) ? Inf : scaled_t[idx]       # never thermalized within the run ⇒ Inf
     end
 
     finite = filter(isfinite, T_vec)
@@ -104,7 +107,8 @@ function thermalization_stats(entropies, scaled_t, k_band, N)
        T_therm_vec    = T_vec,
        frac_therm     = length(finite) / length(T_vec),
        n_therm        = length(finite),
-       threshold_f    = f)
+       threshold_xi   = xi_th,
+       xi_initial     = length(k_band) / N)  # ξ₀, for reporting: varies with band size
 end
 
 # ── One case (the whole ensemble) ─────────────────────────────────────────────
@@ -189,9 +193,11 @@ function run_ensemble_case(spec, task, inner_parallel::Bool)
 
     th = thermalization_stats(entropies, t_ref, case.excited, case.N)
 
+    # ξ̄ rather than S/logN: ξ = e^S/N is the quantity the ξ>1/2 threshold is stated in,
+    # so the printed value can be read directly against it.
     println("[$label_case] S̄=$(round(S_mean[end]; digits=4)) ± $(round(S_std[end]; digits=4))  " *
-            "S/logN=$(round(S_mean[end]/log(case.N); digits=4))  " *
-            "T_th=$(round(th.T_therm_mean; sigdigits=3))  therm=$(th.n_therm)/$(spec.n_real)")
+            "ξ̄=$(round(exp(S_mean[end])/case.N; digits=4))  " *
+            "T_th(med)=$(round(th.T_therm_median; sigdigits=3))  therm=$(th.n_therm)/$(spec.n_real)")
 
     (; N = case.N, param = case.param, Delta = case.delta,
        scaled_t = t_ref,
@@ -199,7 +205,7 @@ function run_ensemble_case(spec, task, inner_parallel::Bool)
        modal_E_mean = modal_acc,
        E_acoustic_mean = E_ac_acc, E_optical_mean = E_opt_acc,
        entropy_realizations = entropies, E_optical_realizations = E_opt_reals,
-       th...,  # splices T_therm_mean/std/median/vec, frac_therm, n_therm, threshold_f in place
+       th...,  # splices T_therm_mean/std/median/vec, frac_therm, n_therm, threshold_xi, xi_initial
        n_real = spec.n_real, seed_base = spec.seed_base,
        branch = spec.branch, k_band = case.excited,
        E_total = b.E_total, energy_density = b.E_total / case.N,
