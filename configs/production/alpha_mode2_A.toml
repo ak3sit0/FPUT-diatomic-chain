@@ -1,0 +1,30 @@
+[experiment]
+name        = "alpha_mode2_A"
+description = "Batch A: mode-2 PBC alpha sweep above the reference (rise expected < 1e4 cycles)"
+
+[physics]
+N              = 64
+boundary       = "periodic"
+system_type    = "springs"
+nonlinear      = "alpha"
+# Dynamics depends only on alpha^2*eps (verified 2026-09-18, dS < 3e-7), so an
+# alpha sweep at fixed eps is a lambda_bar sweep. alpha=0.1 is the nsweep_N64 job.
+param_values   = [0.15, 0.2, 0.3]
+delta_values   = [0.1, 0.3]   # 0.1 = signal, 0.3 = flat control
+energy_density = 0.00695
+init_type      = "mode"
+init_mode      = 2
+n_real         = 1
+seed_base      = 42
+
+[simulation]
+scaled_t_max  = 1.0e5
+n_samples     = 4000
+n_blocks      = 20
+DT            = 0.2
+downsample    = 1
+entropy_delta = 0.6
+debug         = false
+
+[output]
+base_dir = "results/data/alpha_mode2/batchA_high_alpha"
