@@ -70,15 +70,27 @@ function draw!(p, curves)
 end
 
 """
-    guide_hline!(p, y; label="", color=:gray)
+    guide_hline!(p, y; label="", annotation="", side=:left, color=:gray)
 
 Horizontal reference line (equipartition ceiling, plateau level). Kept here
 rather than in the scripts so `draw!` stays the only place curves are drawn and
 no script grows its own `hline!` styling.
+
+`label` puts the line in the legend; `annotation` instead writes small italic
+text just under the line, at the `side` (`:left`/`:right`) edge of the axis, so
+the legend keeps only data series. Call after the axis limits are final.
 """
-function guide_hline!(p, y::Real; label::AbstractString = "", color = :gray)
+function guide_hline!(p, y::Real; label::AbstractString = "", annotation = "",
+                      side::Symbol = :left, color = :gray)
     hline!(p, [y]; color = color, linestyle = :dot, lw = 1.2,
            label = isempty(label) ? "" : label)
+    if !isempty(annotation)
+        lo, hi = xlims(p)
+        yl = ylims(p)
+        x  = side == :left ? lo * (hi / lo)^0.02 : hi / (hi / lo)^0.02
+        annotate!(p, x, y - 0.012 * (yl[2] - yl[1]),
+                  text(annotation, 14, color, side, :top))
+    end
     p
 end
 

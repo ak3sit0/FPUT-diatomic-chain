@@ -149,7 +149,7 @@ function main()
                   decades = Int(log10(lo)):Int(log10(hi)), norm.axis...)
     draw!(fig, curves)
     isnothing(norm.ceiling) ||
-        guide_hline!(fig, norm.ceiling; label = "equipartition")
+        guide_hline!(fig, norm.ceiling; annotation = L"\mathit{equipartition}", side = :left)
     save_fig(fig, "results/figures/entropy/size_sweep",
              "entropy_size_sweep_p$(param)_d$(delta)_$(norm_key)")
 end
