@@ -1,0 +1,28 @@
+[experiment]
+name        = "threshold_Nsweep_alpha03"
+description = "Referee: finite-size robustness of the Delta_kappa=1/2 isolation threshold. alpha=0.3 (lambda_bar^2 = 9x reference), where sub-threshold channels are open at N=64. Delta_kappa=0.3 excluded (anomalous slow onset at N=64)."
+
+[physics]
+N_values       = [128, 256]
+boundary       = "periodic"
+system_type    = "springs"
+nonlinear      = "alpha"
+param_values   = [0.3]
+delta_values   = [0.2, 0.4, 0.5, 0.7]   # 0.2/0.4 open, 0.5/0.7 above threshold
+energy_density = 0.00695                # fixed eps => E_total = eps*N
+init_type      = "mode"
+init_mode      = 2
+n_real         = 1
+seed_base      = 42
+
+[simulation]
+scaled_t_max  = 1.0e5    # fixed cycles => TMAX ∝ N
+n_samples     = 4000     # modal_E ∝ N, not N^2
+n_blocks      = 20
+DT            = 0.2
+downsample    = 1
+entropy_delta = 0.6
+debug         = false
+
+[output]
+base_dir = "results/data/threshold_Nsweep"

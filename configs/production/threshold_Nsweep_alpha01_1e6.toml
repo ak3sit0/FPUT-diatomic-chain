@@ -1,0 +1,28 @@
+[experiment]
+name        = "threshold_Nsweep_alpha01_1e6"
+description = "Paper regime alpha=0.1, N=128/256, above-threshold Delta_kappa, 1e6 cycles, same horizon as the sub-threshold nsweep_rise runs (Delta_kappa=0.1 reaches E_opt/E=0.30 at N=256)."
+
+[physics]
+N_values       = [128, 256]
+boundary       = "periodic"
+system_type    = "springs"
+nonlinear      = "alpha"
+param_values   = [0.1]
+delta_values   = [0.5, 0.7]
+energy_density = 0.00695                # fixed eps => E_total = eps*N
+init_type      = "mode"
+init_mode      = 2
+n_real         = 1
+seed_base      = 42
+
+[simulation]
+scaled_t_max  = 1.0e6
+n_samples     = 4000     # modal_E ∝ N, not N^2
+n_blocks      = 20
+DT            = 0.2
+downsample    = 1
+entropy_delta = 0.6
+debug         = false
+
+[output]
+base_dir = "results/data/threshold_Nsweep_a01_1e6"
