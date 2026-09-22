@@ -1,0 +1,27 @@
+[experiment]
+name        = "referee_threshold_closed_lowalpha_1e6"
+description = "Closes panel (b) on the low-lambda_bar side: closed channel (Delta_kappa=0.7) at alpha=0.05, 0.075, N=64, 1e5 cycles. Batch B only ran Delta_kappa=0.1, 0.3, so the open/closed contrast had no closed reference there."
+
+[physics]
+N              = 64
+boundary       = "periodic"
+system_type    = "springs"
+nonlinear      = "alpha"
+param_values   = [0.05, 0.075]
+delta_values   = [0.7]
+energy_density = 0.00695
+init_type      = "mode"
+init_mode      = 2
+n_real         = 1
+seed_base      = 42
+
+[simulation]
+scaled_t_max  = 1.0e6
+n_samples     = 4000
+n_blocks      = 20
+DT            = 0.2
+downsample    = 1
+entropy_delta = 0.6
+
+[output]
+base_dir = "results/data/referee_threshold_closed_lowalpha_1e6"

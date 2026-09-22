@@ -1,0 +1,27 @@
+[experiment]
+name        = "referee_threshold_N64_1e6"
+description = "Referee reply, energy-density panel: E_opt/E vs Delta_kappa across the threshold at three effective energy densities (alpha=0.1/0.15/0.2 at fixed eps, i.e. lambda_bar^2 = 1x/2.25x/4x the paper value), N=64, matched 1e6-cycle window. Delta_kappa=0.5 is the MARGINAL case (2*w_ac(pi)=w_op(0) exactly), so 0.6 and 0.7 are the genuinely above-threshold points. alpha=0.1 also supplies the two N=64 entries missing from the size panel."
+
+[physics]
+N              = 64
+boundary       = "periodic"
+system_type    = "springs"
+nonlinear      = "alpha"
+param_values   = [0.1, 0.15, 0.2]
+delta_values   = [0.1, 0.3, 0.5, 0.6, 0.7]
+energy_density = 0.00695
+init_type      = "mode"
+init_mode      = 2
+n_real         = 1
+seed_base      = 42
+
+[simulation]
+scaled_t_max  = 1.0e6
+n_samples     = 4000
+n_blocks      = 20
+DT            = 0.2
+downsample    = 1
+entropy_delta = 0.6
+
+[output]
+base_dir = "results/data/referee_threshold_N64"
