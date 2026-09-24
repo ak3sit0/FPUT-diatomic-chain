@@ -1,6 +1,6 @@
 [experiment]
-name        = "fixed_entropy_N256"
-description = "Entropy figure at N=256, rerun to 1e6 cycles: FBC, first-mode excitation, alpha=0.1, epsilon=0.00695, Delta_kappa = 0.05, 0.1, 0.5, 0.65, 0.75, 0.85. Same case as fixed_N64.toml (E_total=0.445 at N=64 => eps=0.00695) at a larger size and a longer window than the first fixed_entropy_N256 run (which went to 1e5 with Delta_kappa = 0.05, 0.1, 0.5, 0.7); Delta_kappa=0.5 is the marginal threshold case (2*w_ac(pi)=w_op(0) exactly), 0.65/0.75/0.85 replace 0.7 to sample above it more finely."
+name        = "fixed_entropy_N256_d095"
+description = "Delta_kappa=0.95 at N=256 to 1e6 cycles, completing the fixed_entropy_N256 sweep (0.05, 0.1, 0.5, 0.65, 0.75, 0.85 already done). One trajectory, ~9 h locally: omega_ref is only 0.0038 here, so 1e6 cycles is a long absolute time."
 
 [physics]
 N              = 256
@@ -8,7 +8,7 @@ boundary       = "fixed"
 system_type    = "springs"
 nonlinear      = "alpha"
 param_values   = [0.1]
-delta_values   = [0.05, 0.1, 0.5, 0.65, 0.75, 0.85] 
+delta_values   = [0.95]
 energy_density = 0.00695     # E_total = eps*N, same density as the N=64 reference
 init_type      = "mode"
 init_mode      = 1           # fixed BC: mode 1 is the lowest acoustic mode
@@ -30,4 +30,4 @@ entropy_delta = 0.6
 debug         = false
 
 [output]
-base_dir = "results/data/fixed_entropy_N256"
+base_dir = "results/data/fixed_entropy_N256_d095"

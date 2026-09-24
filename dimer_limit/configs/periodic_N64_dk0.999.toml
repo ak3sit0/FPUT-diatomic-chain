@@ -1,0 +1,27 @@
+[experiment]
+name = "dimer_limit_dk0.999"
+description = """Δκ = 0.999, PBC, N=64, mode 2 at a REDUCED energy. At the production energy the initial strain
+is α·|d|max = 0.744, close to the cubic-potential turnover (α·d = 1) and flagged UNSAFE by
+dimer_limit/spectrum.jl. E_total = 0.044 restores α·|d|max ≈ 0.23, the value Δκ=0.99 has at the
+production energy, so the two runs sit at the same distance from the turnover."""
+
+[physics]
+N = 64
+boundary = "periodic"
+system_type = "springs"
+nonlinear = "alpha"
+param_values = [0.1]
+delta_values = [0.999]
+init_type = "mode"
+initial_energy = 0.044        # ε = 6.9e-4; E_total = 0.445·(0.234/0.744)²
+
+[simulation]
+scaled_t_max = 1e4            # ≈ 30 min: ω₂ is 22× smaller than at Δκ = 0.1
+n_blocks = 20
+DT = 0.05
+n_samples = 4000
+downsample = 1
+debug = false
+
+[output]
+base_dir = "dimer_limit/data/dk0.999"

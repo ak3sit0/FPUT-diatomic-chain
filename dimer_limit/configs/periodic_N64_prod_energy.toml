@@ -1,0 +1,26 @@
+[experiment]
+name = "dimer_limit_prod_energy"
+description = """Δκ → 1, PBC, N=64, mode 2 at the production energy (E_total = 0.445, ε = 0.00695).
+Initial strain α·|d|max = 0.072 (Δκ=0.9) and 0.234 (Δκ=0.99): both well below the cubic-potential
+turnover at α·d = 1. See dimer_limit/spectrum.jl."""
+
+[physics]
+N = 64
+boundary = "periodic"
+system_type = "springs"
+nonlinear = "alpha"
+param_values = [0.1]
+delta_values = [0.9, 0.99]
+init_type = "mode"            # mode 2: the lowest physical mode under PBC
+initial_energy = 0.445        # same as configs/production/periodic_N64.toml
+
+[simulation]
+scaled_t_max = 1e4            # TMAX = scaled_t_max·2π/ω₂ is resolved per Δκ (≈ 10 min at Δκ=0.99)
+n_blocks = 20
+DT = 0.05
+n_samples = 4000
+downsample = 1
+debug = false
+
+[output]
+base_dir = "dimer_limit/data/prod_energy"

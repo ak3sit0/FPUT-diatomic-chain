@@ -13,6 +13,10 @@ N = 64 original.
   --N n      keep only results of this size (needed when a file mixes sizes)
   --tmin t   left edge of the time axis (default: the first decade with data)
   --norm     raw (default) or logN
+  --all      plot every Δκ found in the files instead of the fixed SPEC_* list,
+             styled cyclically (PALETTE_DELTA) in ascending Δκ order. Use this
+             when a run adds Δκ values the curated spec doesn't cover (e.g. a
+             finer sampling above the threshold).
 
 S̄(t) is the raw time-averaged spectral entropy, as in the paper figure, so its
 ceiling is ln N and moves with N; `--norm logN` divides by it for a cross-N
@@ -37,7 +41,7 @@ const OUTDIR = "results/figures/entropy/paper"
 const SPECS = Dict("fbc" => SPEC_FBC, "pbc" => SPEC_PBC)
 
 function parse_args(args)
-    o = (bc = "fbc", N = nothing, tmin = nothing, norm = "raw")
+    o = (bc = "fbc", N = nothing, tmin = nothing, norm = "raw", all = false)
     paths, i = String[], 1
     while i <= length(args)
         a = args[i]
@@ -45,6 +49,7 @@ function parse_args(args)
         elseif a == "--N";    o = merge(o, (N = parse(Int, args[i+1]),));         i += 2
         elseif a == "--tmin"; o = merge(o, (tmin = parse(Float64, args[i+1]),));  i += 2
         elseif a == "--norm"; o = merge(o, (norm = args[i+1],));                  i += 2
+        elseif a == "--all";  o = merge(o, (all = true,));                        i += 1
         else push!(paths, a); i += 1
         end
     end
@@ -86,7 +91,9 @@ function main()
     isempty(by_delta) && error("No results with N = $N in: $(join(paths, ", "))")
 
     curves = Curve[]
-    for (d, color, ls, lw) in SPECS[o.bc]
+    specs = o.all ? [(d, cyclic(j)...) for (j, d) in enumerate(sort(collect(keys(by_delta))))] :
+                    SPECS[o.bc]
+    for (d, color, ls, lw) in specs
         haskey(by_delta, d) || (println("  ⚠ Δκ=$d not found for N=$N"); continue)
         t, E = prepare_ts(by_delta[d])
         t, S = logdownsample(t, entropy_series(E) ./ scale)
