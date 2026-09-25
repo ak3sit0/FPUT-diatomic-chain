@@ -13,6 +13,11 @@ N = 64 original.
   --N n      keep only results of this size (needed when a file mixes sizes)
   --tmin t   left edge of the time axis (default: the first decade with data)
   --norm     raw (default) or logN
+  --deltas a,b,..  plot only these Δκ (comma-separated), styled cyclically in
+             ascending order; the output gets a `_sel` suffix so it doesn't
+             overwrite the full figure.
+  --tag s    output suffix `_s`, replacing the default `_sel`, so two selections
+             of the same N don't overwrite each other.
   --all      plot every Δκ found in the files instead of the fixed SPEC_* list,
              styled cyclically (PALETTE_DELTA) in ascending Δκ order. Use this
              when a run adds Δκ values the curated spec doesn't cover (e.g. a
@@ -27,7 +32,7 @@ When a Δκ appears in several files the first one wins, so list the preferred
 file first.
 
 Usage:
-  julia --project=. scripts/plot/plot_entropy_fbc_size.jl [--bc fbc|pbc] [--N n] [--tmin t] [--norm raw|logN] <a.jld2> [b.jld2 ...]
+  julia --project=. scripts/plot/plot_entropy_fbc_size.jl [--bc fbc|pbc] [--N n] [--tmin t] [--norm raw|logN] [--all | --deltas a,b,..] <a.jld2> [b.jld2 ...]
 """
 
 using JLD2, LaTeXStrings, TOML
@@ -36,12 +41,12 @@ include("../../src/fput_analysis.jl");  using .FPUTAnalysis
 include("../../src/plotting_utils.jl"); using .PlottingUtils
 include("../../src/plot_style.jl");     using .PlotStyle
 
-const USAGE = "Usage: julia --project=. scripts/plot/plot_entropy_fbc_size.jl [--bc fbc|pbc] [--N n] [--tmin t] [--norm raw|logN] <a.jld2> [b.jld2 ...]"
+const USAGE = "Usage: julia --project=. scripts/plot/plot_entropy_fbc_size.jl [--bc fbc|pbc] [--N n] [--tmin t] [--norm raw|logN] [--all | --deltas a,b,..] <a.jld2> [b.jld2 ...]"
 const OUTDIR = "results/figures/entropy/paper"
 const SPECS = Dict("fbc" => SPEC_FBC, "pbc" => SPEC_PBC)
 
 function parse_args(args)
-    o = (bc = "fbc", N = nothing, tmin = nothing, norm = "raw", all = false)
+    o = (bc = "fbc", N = nothing, tmin = nothing, norm = "raw", all = false, deltas = nothing, tag = nothing)
     paths, i = String[], 1
     while i <= length(args)
         a = args[i]
@@ -49,7 +54,9 @@ function parse_args(args)
         elseif a == "--N";    o = merge(o, (N = parse(Int, args[i+1]),));         i += 2
         elseif a == "--tmin"; o = merge(o, (tmin = parse(Float64, args[i+1]),));  i += 2
         elseif a == "--norm"; o = merge(o, (norm = args[i+1],));                  i += 2
+        elseif a == "--tag";  o = merge(o, (tag = args[i+1],));                   i += 2
         elseif a == "--all";  o = merge(o, (all = true,));                        i += 1
+        elseif a == "--deltas"; o = merge(o, (deltas = parse.(Float64, split(args[i+1], ",")),)); i += 2
         else push!(paths, a); i += 1
         end
     end
@@ -91,8 +98,9 @@ function main()
     isempty(by_delta) && error("No results with N = $N in: $(join(paths, ", "))")
 
     curves = Curve[]
-    specs = o.all ? [(d, cyclic(j)...) for (j, d) in enumerate(sort(collect(keys(by_delta))))] :
-                    SPECS[o.bc]
+    cyc_specs(ds) = [(d, cyclic(j)...) for (j, d) in enumerate(sort(ds))]
+    specs = !isnothing(o.deltas) ? cyc_specs(o.deltas) :
+            o.all                ? cyc_specs(collect(keys(by_delta))) : SPECS[o.bc]
     for (d, color, ls, lw) in specs
         haskey(by_delta, d) || (println("  ⚠ Δκ=$d not found for N=$N"); continue)
         t, E = prepare_ts(by_delta[d])
@@ -110,7 +118,8 @@ function main()
     fig = logplot(; ylabel = ylabel, xlims = (lo, hi),
                   decades = Int(round(log10(lo))):Int(round(log10(hi))))
     draw!(fig, curves)
-    stem = "fig_entropy_$(uppercase(o.bc))_N$(N)" * (o.norm == "logN" ? "_logN" : "")
+    stem = "fig_entropy_$(uppercase(o.bc))_N$(N)" * (o.norm == "logN" ? "_logN" : "") *
+           (isnothing(o.tag) ? (isnothing(o.deltas) ? "" : "_sel") : "_" * o.tag)
     save_fig(fig, OUTDIR, stem)
 end
 
