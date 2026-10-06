@@ -18,14 +18,16 @@ Initial condition (5th argument):
 - `dimer` (default): the single-dimer excitation above.
 - `mode2`: the production initial condition — all the energy in mode 2, the lowest
   acoustic mode. Undefined at Δκ = 1, where ω₂ = 0 (build_case refuses it too).
+- `dimer_v`: dimer 1 kicked from equilibrium (q = 0, opposite velocities ∓√E, so
+  the energy is exactly E and all kinetic, zero centre of mass).
 - `mode1`: the same with mode 1, the production choice for FBC.
 
 Boundary (6th argument): `periodic` (default) or `fixed`. FBC outputs get `_fbc`.
 
 Usage:
-  julia --project=. dimer_limit/dimer_approach.jl [N=64] [E=0.445] [cycles=1e5] [deltas=0.9,0.95,0.99,1] [ic=dimer|mode2|mode1] [bc=periodic|fixed]
+  julia --project=. dimer_limit/dimer_approach.jl [N=64] [E=0.445] [cycles=1e5] [deltas=0.9,0.95,0.99,1] [ic=dimer|dimer_v|mode2|mode1] [bc=periodic|fixed] [site=first|center]
 
-  julia --project=. dimer_limit/dimer_approach.jl --replot [--norm] dimer_limit/data/dimer_approach_*.jld2
+  julia --project=. dimer_limit/dimer_approach.jl --replot [--norm] [--dimers|--modes] dimer_limit/data/dimer_approach_*.jld2
   julia --project=. dimer_limit/dimer_approach.jl --merge a.jld2 b.jld2 …    # combine sweeps, plot S̄/ln N
 
 Outputs are tagged with the Δκ list, so different sets do not overwrite each other.
@@ -78,7 +80,11 @@ end
 """Projected mode for the modal initial condition: PBC mode 2, FBC mode 1 (project convention)."""
 const IC_MODE = Dict("mode2" => 2, "mode1" => 1)
 
-function run(dk, N, E_in, T, ic, bc)
+"""First mass of the excited dimer. FBC dimers are (2,3), (4,5), …; PBC dimers (1,2), (3,4), …
+`:center` picks the middle one, which for FBC is (N/2, N/2+1): the mirror-symmetric position."""
+dimer_start(N, bc, site) = site == :center ? (bc == :fixed ? N ÷ 2 : N ÷ 2 + 1) : (bc == :fixed ? 2 : 1)
+
+function run(dk, N, E_in, T, ic, bc, site = :first)
     sp   = SystemParams(N, dk, 0.0, α, β, bc)
     k, m = make_system(sp)
     freq, Vm = find_normal_modes(k, m, bc)
@@ -86,18 +92,24 @@ function run(dk, N, E_in, T, ic, bc)
     q0, v0 = zeros(N), zeros(N)
     if ic == "dimer"
         r0 = sqrt(2 * E_in / (1 + dk))          # harmonic amplitude on the κ₁ bond
-        i  = bc == :fixed ? 2 : 1               # FBC: dimer 1 = masses (2, 3)
+        i  = dimer_start(N, bc, site)           # FBC: dimer 1 = masses (2, 3)
         q0[i], q0[i+1] = -r0 / 2, r0 / 2
+    elseif ic == "dimer_v"                      # kick from equilibrium: q = 0, v = ∓√E
+        i = dimer_start(N, bc, site)            # T = ½(E + E) = E exactly, zero centre of mass
+        v0[i], v0[i+1] = -sqrt(E_in), sqrt(E_in)
     elseif haskey(IC_MODE, ic)
         n = IC_MODE[ic]
         ω = ref_frequency(freq, n)              # errors at Δκ = 1 (acoustic band at 0)
         q0 .= sqrt(2 * E_in) / ω .* (Diagonal(1 ./ sqrt.(m)) * Vm)[:, n]
     else
-        error("ic must be \"dimer\", \"mode1\" or \"mode2\", got \"$ic\"")
+        error("ic must be \"dimer\", \"dimer_v\", \"mode1\" or \"mode2\", got \"$ic\"")
     end
     d0 = bc == :fixed ? diff([0.0; q0; 0.0]) : [q0[mod1(i+1, N)] - q0[i] for i in 1:N]
     strain0 = α * maximum(abs, d0)
     Q, V, t, _, _ = solve_fput(sp, q0, v0, (0.0, T), DT; saveat = range(0, T; length = NSAVE + 1))
+    # Largest bond strain along the whole trajectory (the t = 0 value is 0 for dimer_v).
+    dmax = bc == :fixed ? maximum(abs, diff(vcat(zeros(1, size(Q, 2)), Q, zeros(1, size(Q, 2))); dims = 1)) :
+                          maximum(abs, Q[[2:N; 1], :] .- Q)
 
     H   = [hamiltonian(Q[:, i], V[:, i], k, bc) for i in axes(Q, 2)]
     rel = abs.(H .- H[1]) ./ H[1]
@@ -115,14 +127,14 @@ function run(dk, N, E_in, T, ic, bc)
     opt = bc == :fixed ? (N÷2+2:N) : (N÷2+1:N)
     opt_share = sum(E_modal[opt, end]) / sum(E_modal[:, end])
     # Share of the energy still in what was excited at t = 0.
-    loc1 = ic == "dimer" ? (bc == :fixed ? E_dimer[2, end] + E_dimer[3, end] : E_dimer[1, end] + E_dimer[2, end]) /
+    loc1 = ic in ("dimer", "dimer_v") ? (E_dimer[dimer_start(N, bc, site), end] + E_dimer[dimer_start(N, bc, site) + 1, end]) /
                            sum(E_dimer[:, end]) :
                            E_modal[IC_MODE[ic], end] / sum(E_modal[:, end])
 
     (; dk, t_cyc = t .* ω_CLOCK ./ 2π, ok, dH = maximum(rel),
        S_modal = spectral_entropy(E_modal, SMOOTH_DELTA),
        S_dimer = spectral_entropy(E_dimer, SMOOTH_DELTA),
-       opt_share, loc1, strain0,
+       opt_share, loc1, strain0, strain_max = α * dmax,
        bw_opt = freq[end] - freq[first(opt)])
 end
 
@@ -131,16 +143,18 @@ function main()
     deltas = length(ARGS) >= 4 ? parse.(Float64, split(ARGS[4], ",")) : DEFAULT_DELTAS
     ic     = length(ARGS) >= 5 ? ARGS[5] : "dimer"
     bc     = length(ARGS) >= 6 ? Symbol(ARGS[6]) : :periodic
-    tag    = "N$(N)_dk" * join(deltas, "-") * (ic == "dimer" ? "" : "_$(ic)") * (bc == :fixed ? "_fbc" : "")
+    site   = length(ARGS) >= 7 ? Symbol(ARGS[7]) : :first      # first | center
+    tag    = "N$(N)_dk" * join(deltas, "-") * (ic == "dimer" ? "" : "_$(ic)") * (bc == :fixed ? "_fbc" : "") *
+             (site == :center ? "_center" : "")
     T = cycles * 2π / ω_CLOCK
     @printf("%s, N=%d, α=%g, ic=%s with E=%g (ε=%.3g), T=%.3e (%.0e cycles of ω=2)\n\n",
             bc == :fixed ? "FBC" : "PBC", N, α, ic, E_in, E_in/N, T, cycles)
     @printf("%-6s %-5s %-9s %-9s %-10s %-10s %-10s %-10s %-10s %s\n",
             "Δκ", "ok", "|ΔH|/H", "α|d|(0)", "opt.bandw", "S_mod(0)", "S_mod(end)", "S_dim(end)", "E_opt/E",
-            ic == "dimer" ? "E in dimer 1 (end)" : "E in $(ic) (end)")
+            ic in ("dimer", "dimer_v") ? "E in dimer 1 (end)" : "E in $(ic) (end)")
 
     runs = map(deltas) do dk
-        r = run(dk, N, E_in, T, ic, bc)
+        r = run(dk, N, E_in, T, ic, bc, site)
         @printf("%-6g %-5s %-9.2e %-9.3f %-10.3e %-10.3f %-10.3f %-10.3f %-10.3f %.3f\n",
                 dk, r.ok, r.dH, r.strain0, r.bw_opt, r.S_modal[2], r.S_modal[end], r.S_dimer[end], r.opt_share, r.loc1)
         r
@@ -155,12 +169,12 @@ function main()
 end
 
 const IC_TITLE = Dict("dimer" => "Only dimer 1 stretched", "mode2" => "Mode-2 initial condition",
-                      "mode1" => "Mode-1 initial condition")
+                      "mode1" => "Mode-1 initial condition", "dimer_v" => "Only dimer 1 kicked")
 
 """Initial condition from a file name: `_mode1` / `_mode2` suffix, else the dimer."""
 function ic_from_name(path)
-    i = findfirst(ic -> occursin("_$(ic)", basename(path)), ("mode1", "mode2"))
-    isnothing(i) ? "dimer" : ("mode1", "mode2")[i]
+    i = findfirst(ic -> occursin("_$(ic)", basename(path)), ("mode1", "mode2", "dimer_v"))
+    isnothing(i) ? "dimer" : ("mode1", "mode2", "dimer_v")[i]
 end
 
 """
@@ -177,7 +191,7 @@ energy is shared evenly over all N elements), bounded in [0,1] and comparable
 across N. The second reference line, ln(N/2)/ln N, is the ceiling when the energy
 stays in one band.
 """
-function make_figure(runs, N, E_in, ic, cycles; normalize::Bool = false)
+function make_figure(runs, N, E_in, ic, cycles; normalize::Bool = false, only = nothing, title = IC_TITLE[ic])
     apply_style!()
     scale = normalize ? 1 / log(N) : 1.0
     panel(field, ttl) = begin
@@ -194,8 +208,12 @@ function make_figure(runs, N, E_in, ic, cycles; normalize::Bool = false)
                      annotation = normalize ? L"\ln(N/2)\,/\,\ln N" : L"\ln(N/2)", side = :left)
         p
     end
+    only === :S_modal && return plot(panel(:S_modal, "Normal modes"); size = (760, 580),
+                                     plot_title = title, plot_titlefontsize = 15, top_margin = 4Plots.mm)
+    only === :S_dimer && return plot(panel(:S_dimer, ""); size = (760, 580),
+                                     plot_title = title, plot_titlefontsize = 15, top_margin = 4Plots.mm)
     plot(panel(:S_modal, "Normal modes"), panel(:S_dimer, "Dimer coordinates");
-         layout = (1, 2), size = (1400, 580), plot_title = IC_TITLE[ic], plot_titlefontsize = 15,
+         layout = (1, 2), size = (1400, 580), plot_title = title, plot_titlefontsize = 15,
          top_margin = 4Plots.mm)
 end
 
@@ -206,13 +224,14 @@ Regenerate a figure from a saved `dimer_approach_*.jld2` without re-simulating.
 The initial condition is read from the file name (`_mode2` suffix), the time span
 from the saved clock.
 """
-function replot(path; normalize::Bool = false)
+function replot(path; normalize::Bool = false, only = nothing)
     d  = load(path)
     ic = ic_from_name(path)
     cycles = exp10(round(log10(last(d["runs"][1].t_cyc))))
     name = replace(splitext(basename(path))[1], "dimer_approach_" => "dimer_approach_entropy_") *
-           (normalize ? "_norm" : "")
-    save_fig(make_figure(d["runs"], d["N"], d["E_in"], ic, cycles; normalize),
+           (normalize ? "_norm" : "") * (only === :S_dimer ? "_dimers" : only === :S_modal ? "_modes" : "")
+    title = occursin("_center", basename(path)) ? replace(IC_TITLE[ic], "dimer 1" => "central dimer") : IC_TITLE[ic]
+    save_fig(make_figure(d["runs"], d["N"], d["E_in"], ic, cycles; normalize, only, title),
              joinpath(@__DIR__, "figures"), name; exts = (".png",))
 end
 
@@ -256,8 +275,10 @@ if abspath(PROGRAM_FILE) == @__FILE__
     # `--replot [--norm] a.jld2 b.jld2 …` regenerates figures from saved runs.
     if !isempty(ARGS) && ARGS[1] == "--replot"
         rest = ARGS[2:end]
-        normalize = !isempty(rest) && rest[1] == "--norm"
-        foreach(f -> replot(f; normalize), normalize ? rest[2:end] : rest)
+        flags = filter(startswith("--"), rest)
+        normalize = "--norm" in flags
+        only = "--dimers" in flags ? :S_dimer : "--modes" in flags ? :S_modal : nothing
+        foreach(f -> replot(f; normalize, only), filter(!startswith("--"), rest))
     elseif !isempty(ARGS) && ARGS[1] == "--merge"
         replot(merge_runs(ARGS[2:end]...); normalize = true)
     else

@@ -1,6 +1,6 @@
 [experiment]
-name        = "fixed_entropy_N128"
-description = "Entropy figure at N=128: FBC, first-mode excitation, alpha=0.1, epsilon=0.00695, Delta_kappa = 0.05, 0.1, 0.5, 0.7. Same case as fixed_N64.toml (E_total=0.445 at N=64 => eps=0.00695) at a larger size; the N=64 figure is the reference."
+name        = "fixed_entropy_N128_1e7"
+description = "Regime-1 entropy figure extended to 1e7 cycles at N=128: FBC, first-mode excitation, alpha=0.1, epsilon=0.00695, Delta_kappa = 0.05, 0.1, 0.5, 0.65, dt=0.2, 40000 samples (one every 250 cycles; the first 1e6 cycles are the same deterministic trajectory already stored in the 1e6 runs)."
 
 [physics]
 N              = 128
@@ -30,4 +30,4 @@ entropy_delta = 0.6
 debug         = false
 
 [output]
-base_dir = "results/data/fixed_entropy_N128"
+base_dir = "results/data/fixed_entropy_N128_1e7"

@@ -1,0 +1,28 @@
+[experiment]
+name        = "fixed_mode2_N64_1e6"
+description = "Entropy figure for the paper to 1e6 cycles: FBC, second-mode excitation, N=64, alpha=0.1, epsilon=0.00695, Delta_kappa = 0.01, 0.1, 0.2, 0.3. Protocol of fixed_entropy_N64_1e6 (dt=0.2, 40000 samples)."
+
+[physics]
+N              = 64
+boundary       = "fixed"
+system_type    = "springs"
+nonlinear      = "alpha"
+param_values   = [0.1]
+delta_values   = [0.01, 0.1, 0.2, 0.3]
+energy_density = 0.00695
+init_type      = "mode"
+init_mode      = 2
+n_real         = 1
+seed_base      = 42
+
+[simulation]
+scaled_t_max  = 1.0e6
+n_samples     = 40000
+n_blocks      = 40
+DT            = 0.2
+downsample    = 1
+entropy_delta = 0.6
+debug         = false
+
+[output]
+base_dir = "results/data/fixed_mode2_N64_1e6"

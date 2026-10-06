@@ -16,6 +16,7 @@ N = 64 original.
   --deltas a,b,..  plot only these Δκ (comma-separated), styled cyclically in
              ascending order; the output gets a `_sel` suffix so it doesn't
              overwrite the full figure.
+  --legend p legend position (e.g. bottomleft); default is the PlotStyle one.
   --tag s    output suffix `_s`, replacing the default `_sel`, so two selections
              of the same N don't overwrite each other.
   --all      plot every Δκ found in the files instead of the fixed SPEC_* list,
@@ -32,21 +33,22 @@ When a Δκ appears in several files the first one wins, so list the preferred
 file first.
 
 Usage:
-  julia --project=. scripts/plot/plot_entropy_fbc_size.jl [--bc fbc|pbc] [--N n] [--tmin t] [--norm raw|logN] [--all | --deltas a,b,..] <a.jld2> [b.jld2 ...]
+  julia --project=. scripts/plot/plot_entropy_fbc_size.jl [--bc fbc|pbc] [--N n] [--tmin t] [--norm raw|logN] [--legend pos] [--all | --deltas a,b,..] <a.jld2> [b.jld2 ...]
 """
 
 using JLD2, LaTeXStrings, TOML
+using Plots: plot!
 include("../../src/config.jl");         using .Config
 include("../../src/fput_analysis.jl");  using .FPUTAnalysis
 include("../../src/plotting_utils.jl"); using .PlottingUtils
 include("../../src/plot_style.jl");     using .PlotStyle
 
-const USAGE = "Usage: julia --project=. scripts/plot/plot_entropy_fbc_size.jl [--bc fbc|pbc] [--N n] [--tmin t] [--norm raw|logN] [--all | --deltas a,b,..] <a.jld2> [b.jld2 ...]"
+const USAGE = "Usage: julia --project=. scripts/plot/plot_entropy_fbc_size.jl [--bc fbc|pbc] [--N n] [--tmin t] [--norm raw|logN] [--legend pos] [--all | --deltas a,b,..] <a.jld2> [b.jld2 ...]"
 const OUTDIR = "results/figures/entropy/paper"
 const SPECS = Dict("fbc" => SPEC_FBC, "pbc" => SPEC_PBC)
 
 function parse_args(args)
-    o = (bc = "fbc", N = nothing, tmin = nothing, norm = "raw", all = false, deltas = nothing, tag = nothing)
+    o = (bc = "fbc", N = nothing, tmin = nothing, norm = "raw", legend = nothing, all = false, deltas = nothing, tag = nothing)
     paths, i = String[], 1
     while i <= length(args)
         a = args[i]
@@ -54,6 +56,7 @@ function parse_args(args)
         elseif a == "--N";    o = merge(o, (N = parse(Int, args[i+1]),));         i += 2
         elseif a == "--tmin"; o = merge(o, (tmin = parse(Float64, args[i+1]),));  i += 2
         elseif a == "--norm"; o = merge(o, (norm = args[i+1],));                  i += 2
+        elseif a == "--legend"; o = merge(o, (legend = Symbol(args[i+1]),)); i += 2
         elseif a == "--tag";  o = merge(o, (tag = args[i+1],));                   i += 2
         elseif a == "--all";  o = merge(o, (all = true,));                        i += 1
         elseif a == "--deltas"; o = merge(o, (deltas = parse.(Float64, split(args[i+1], ",")),)); i += 2
@@ -113,11 +116,18 @@ function main()
 
     tmax = maximum(last(c.x) for c in curves)
     lo = isnothing(o.tmin) ? exp10(ceil(log10(maximum(first(c.x) for c in curves)))) : o.tmin
-    hi = exp10(ceil(log10(tmax)))
+    # Round up to the decade only when the curves nearly reach it; otherwise end the axis
+    # at the data (a 1.5e5 run would otherwise show an empty decade up to 1e6).
+    hi = tmax >= 0.9 * exp10(ceil(log10(tmax))) ? exp10(ceil(log10(tmax))) : tmax
     ylabel = o.norm == "logN" ? L"\bar{S}(t)\,/\,\ln N" : L"\bar{S}(t)"
     fig = logplot(; ylabel = ylabel, xlims = (lo, hi),
-                  decades = Int(round(log10(lo))):Int(round(log10(hi))))
+                  decades = Int(round(log10(lo))):Int(floor(log10(hi * 1.0001))))
     draw!(fig, curves)
+    isnothing(o.legend) || plot!(fig; legend = o.legend)
+    if o.norm == "logN"   # equipartition ceiling and the ln(N/2) level (half the modes)
+        guide_hline!(fig, 1.0; annotation = L"\mathit{equipartition}", side = :left)
+        guide_hline!(fig, log(N / 2) / log(N); annotation = L"\ln(N/2)/\ln N", side = :right)
+    end
     stem = "fig_entropy_$(uppercase(o.bc))_N$(N)" * (o.norm == "logN" ? "_logN" : "") *
            (isnothing(o.tag) ? (isnothing(o.deltas) ? "" : "_sel") : "_" * o.tag)
     save_fig(fig, OUTDIR, stem)

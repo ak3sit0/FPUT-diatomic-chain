@@ -1,0 +1,13 @@
+FBC, N=256, α=0.1, ic=dimer_v with E=0.445 (ε=0.00174), T=3.142e+06 (1e+06 cycles of ω=2)
+
+Δκ     ok    |ΔH|/H    α|d|(0)   opt.bandw  S_mod(0)   S_mod(end) S_dim(end) E_opt/E    E in dimer 1 (end)
+0.7    true  4.54e-07  0.000     1.560e-01  4.184      4.133      4.869      0.996      0.001
+0.8    true  4.76e-07  0.000     1.026e-01  4.170      4.028      4.853      0.998      0.005
+0.9    true  5.02e-07  0.000     5.063e-02  4.162      4.019      4.843      1.000      0.005
+0.95   true  5.19e-07  0.000     2.515e-02  4.159      3.871      4.840      1.000      0.005
+0.99   true  5.25e-07  0.000     5.005e-03  4.159      3.361      4.837      1.000      0.056
+1      true  6.65e-07  0.000     0.000e+00  0.000      0.000      0.000      1.000      1.000
+
+references: ln N = 5.545, ln(N/2) = 4.852 (whole optical band only)
+Saved: /home/joseangel/Documents/Proyectos/FPUT_diatomic_chain/Codigo/dimer_limit/figures/dimer_approach_entropy_N256_dk0.7-0.8-0.9-0.95-0.99-1.0_dimer_v_fbc_center.png
+Saved: /home/joseangel/Documents/Proyectos/FPUT_diatomic_chain/Codigo/dimer_limit/figures/dimer_approach_entropy_N256_dk0.7-0.8-0.9-0.95-0.99-1.0_dimer_v_fbc_center_norm_dimers.png

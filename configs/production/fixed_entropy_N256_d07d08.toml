@@ -1,14 +1,14 @@
 [experiment]
-name        = "fixed_entropy_N128"
-description = "Entropy figure at N=128: FBC, first-mode excitation, alpha=0.1, epsilon=0.00695, Delta_kappa = 0.05, 0.1, 0.5, 0.7. Same case as fixed_N64.toml (E_total=0.445 at N=64 => eps=0.00695) at a larger size; the N=64 figure is the reference."
+name        = "fixed_entropy_N256_d07d08"
+description = "Regime-2 entropy figure, Delta_kappa = 0.7, 0.8 at N=256, to 1e6 cycles: FBC, first-mode excitation, alpha=0.1, epsilon=0.00695, dt=0.2, 40000 samples. Completes the Delta_kappa >= 0.7 set with the existing 0.95 runs (fixed_entropy_N128_1e6, fixed_entropy_N256_d095). omega_ref is small at large Delta_kappa, so 1e6 cycles is a long absolute time."
 
 [physics]
-N              = 128
+N              = 256
 boundary       = "fixed"
 system_type    = "springs"
 nonlinear      = "alpha"
 param_values   = [0.1]
-delta_values   = [0.05, 0.1, 0.5, 0.65]
+delta_values   = [0.7, 0.8]
 energy_density = 0.00695     # E_total = eps*N, same density as the N=64 reference
 init_type      = "mode"
 init_mode      = 1           # fixed BC: mode 1 is the lowest acoustic mode
@@ -18,7 +18,7 @@ seed_base      = 42
 [simulation]
 # Fixed number of cycles => TMAX ∝ N. The N=64 reference spans scaled_t = 5.5e4-7.7e4
 # (fixed TMAX=1e7, so it shrinks with Delta_kappa); 1e5 covers it for every Delta_kappa.
-scaled_t_max  = 1.0e7
+scaled_t_max  = 1.0e6
 # 40000 samples = one every 2.5 cycles: the paper's figure starts near t ~ 1e1 on a
 # log axis and reads the relaxation at t ~ 1e2, so 4000 samples (25 cycles apart)
 # would leave 4 points in that decade. modal_E ~ 40000*N*8 B per case.
@@ -30,4 +30,4 @@ entropy_delta = 0.6
 debug         = false
 
 [output]
-base_dir = "results/data/fixed_entropy_N128"
+base_dir = "results/data/fixed_entropy_N256_d07d08"
